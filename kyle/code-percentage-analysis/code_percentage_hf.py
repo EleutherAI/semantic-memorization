@@ -38,7 +38,7 @@ def calculate_nl_percent(dataset, pythia_tokenizer):
     )
     data_loader = DataLoader(memories, batch_size=128)
 
-    device = torch.device("cuda:6")
+    device = torch.device("cuda:7")
     model_path = "usvsnsp/code-vs-nl"
     code_tokenizer = AutoTokenizer.from_pretrained(model_path)
     code_classifier = AutoModelForSequenceClassification.from_pretrained(model_path)
