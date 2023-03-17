@@ -14,6 +14,8 @@
 *.tax2010
 *.vcf
 *.xml
+*.pkl
+*.pkl_with_lrs
 
 ### JetBrains ###
 # Covers JetBrains IDEs: IntelliJ, RubyMine, PhpStorm, AppCode, PyCharm, CLion, Android Studio, WebStorm and Rider
@@ -430,3 +432,5 @@ tags
 .ionide
 
 # End of https://www.toptal.com/developers/gitignore/api/python,visualstudiocode,pycharm,jetbrains,linux,vim,data
+aflah/data/pythia-410m.pkl
+aflah/data/pythia-70m.pkl_with_lrs
