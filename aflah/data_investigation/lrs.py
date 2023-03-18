@@ -1,22 +1,45 @@
-def longest_repeating_sublist(lst):
-    """
-    Finds the longest repeating sublist in a list.
-    """
-    lst = list(lst)
-    longest_sublist = []
-    for i in range(len(lst)):
-        for j in range(i+1, len(lst)):
-            # check if the sublist repeats later in the list
-            k = 0
-            while j+k < len(lst) and lst[i+k] == lst[j+k]:
-                k += 1
-            if k > 0 and (not longest_sublist or k > len(longest_sublist)):
-                # found a longer repeating sublist
-                longest_sublist = lst[i:i+k]
-    return longest_sublist
-
-
-if __name__ == '__main__':
-    lst = [ 1,2,3,1]
-    longest_sublist = longest_repeating_sublist(lst)
-    print(longest_sublist)  # Output: [5, 6, 7, 8, 9]
+def longestRepeatedSublist(ls):
+    ls = list(ls)
+    n = len(ls)
+    LCSRe = [[0 for x in range(n + 1)]
+                for y in range(n + 1)]
+ 
+    res = [] # To store result
+    res_length = 0 # To store length of result
+ 
+    # building table in bottom-up manner
+    index = 0
+    for i in range(1, n + 1):
+        for j in range(i + 1, n + 1):
+             
+            # (j-i) > LCSRe[i-1][j-1] to remove
+            # overlapping
+            if (ls[i - 1] == ls[j - 1] and
+                LCSRe[i - 1][j - 1] < (j - i)):
+                LCSRe[i][j] = LCSRe[i - 1][j - 1] + 1
+ 
+                # updating maximum length of the
+                # substring and updating the finishing
+                # index of the suffix
+                if (LCSRe[i][j] > res_length):
+                    res_length = LCSRe[i][j]
+                    index = max(i, index)
+                 
+            else:
+                LCSRe[i][j] = 0
+ 
+    # If we have non-empty result, then insert
+    # all characters from first character to
+    # last character of string
+    if (res_length > 0):
+        for i in range(index - res_length + 1,
+                                    index + 1):
+            res.append(ls[i - 1])
+ 
+    return res
+ 
+# Driver Code
+if __name__ == "__main__":
+    ls = "121313121"
+    ls = list(map(int, ls))
+    print(longestRepeatedSublist(ls))
