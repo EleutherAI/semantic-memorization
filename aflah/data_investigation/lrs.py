@@ -35,11 +35,32 @@ def longestRepeatedSublist(ls):
         for i in range(index - res_length + 1,
                                     index + 1):
             res.append(ls[i - 1])
- 
+    
     return res
+
+def count_subls(ls, sub_ls):
+    ls = list(ls)
+    sub_ls = list(sub_ls)
+    ls = ''.join(map(str, ls))
+    sub_ls = ''.join(map(str, sub_ls))
+    c = ls.count(sub_ls)
+    return c
  
 # Driver Code
 if __name__ == "__main__":
     ls = "121313121"
     ls = list(map(int, ls))
-    print(longestRepeatedSublist(ls))
+    output = longestRepeatedSublist(ls)
+    print(output, count_subls(ls, output))
+    ls = "121212121"
+    ls = list(map(int, ls))
+    output = longestRepeatedSublist(ls)
+    print(output, count_subls(ls, output))
+    ls = "1121212"
+    ls = list(map(int, ls))
+    output = longestRepeatedSublist(ls)
+    print(output, count_subls(ls, output))
+    ls = "123123123123123121"
+    ls = list(map(int, ls))
+    output = longestRepeatedSublist(ls)
+    print(output, count_subls(ls, output))

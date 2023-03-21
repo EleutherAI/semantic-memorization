@@ -16,7 +16,7 @@
 *.xml
 *.pkl
 *.pkl_with_lrs
-
+*.pkl_with_chunk_and_k
 ### JetBrains ###
 # Covers JetBrains IDEs: IntelliJ, RubyMine, PhpStorm, AppCode, PyCharm, CLion, Android Studio, WebStorm and Rider
 # Reference: https://intellij-support.jetbrains.com/hc/en-us/articles/206544839
@@ -434,3 +434,4 @@ tags
 # End of https://www.toptal.com/developers/gitignore/api/python,visualstudiocode,pycharm,jetbrains,linux,vim,data
 aflah/data/pythia-410m.pkl
 aflah/data/pythia-70m.pkl_with_lrs
+aflah/data/pythia-1b.pkl_with_chunk_and_k
