@@ -1,6 +1,8 @@
 # Created by https://www.toptal.com/developers/gitignore/api/python,visualstudiocode,pycharm,jetbrains,linux,vim,data
 # Edit at https://www.toptal.com/developers/gitignore?templates=python,visualstudiocode,pycharm,jetbrains,linux,vim,data
 
+
+.vscode
 ### Data ###
 *.csv
 *.dat
