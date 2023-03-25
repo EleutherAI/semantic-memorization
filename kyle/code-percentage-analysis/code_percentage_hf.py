@@ -36,7 +36,7 @@ def calculate_nl_percent(dataset, pythia_tokenizer):
         pythia_tokenizer,
         # sample=100000,
     )
-    data_loader = DataLoader(memories, batch_size=128)
+    data_loader = DataLoader(memories, batch_size=64)
 
     device = torch.device("cuda:7")
     model_path = "usvsnsp/code-vs-nl"

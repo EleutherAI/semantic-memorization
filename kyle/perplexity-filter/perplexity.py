@@ -1,5 +1,6 @@
 from transformers import AutoTokenizer, GPTNeoXForCausalLM
 from torch.utils.data import Dataset, DataLoader
+from accelerate import Accelerator
 from datasets import load_dataset
 from natsort import natsorted
 from tqdm import tqdm
@@ -36,43 +37,63 @@ def load_tokenizer(split_name):
     tokenizer.pad_token = tokenizer.eos_token
     return tokenizer
 
+
 def load_model(split_name):
     isDeduped = split_name.startswith("deduped")
     model = split_name.split("duped.")[-1]
     corresponding_model = f"EleutherAI/pythia-{model}{'-deduped' if isDeduped else ''}"
-    return GPTNeoXForCausalLM.from_pretrained(corresponding_model, device_map="auto", load_in_8bit=True).eval()
+    return GPTNeoXForCausalLM.from_pretrained(corresponding_model, device_map="sequential", load_in_8bit=True).eval()
 
 
 def calculate_perplexity(logits, labels):
-    shift_logits = logits.detach()[:-1, :].contiguous()
-    shift_labels = labels[1:].contiguous()
-    loss_fct = torch.nn.CrossEntropyLoss()
-    cross_entropy = loss_fct(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
-    perplexity = torch.exp(cross_entropy)
+    # Store the probabilities for each token. These will be summed later, but having the
+    # individual probabilities is helpful for debugging.
+    token_probs = []
+
+    # Don't include the final token logits. There are no labels for
+    # these since the sequence has ended.
+    shifted_logits = logits.detach()[:-1, :]
+
+    for token_index in range(len(shifted_logits)):
+        # Map the logits to probabilities.
+        predicted_probs = torch.softmax(shifted_logits[token_index], dim=0)
+        # Get the probability of the correct label.
+        label_prob = predicted_probs[labels[token_index + 1]]
+        # Store the probability for this token.
+        token_probs.append(label_prob.detach())
+
+    # Caluclate the log-likelyhood of the sequence by summing the probabilities
+    # of each token and then taking the log.
+    log_likelihood = torch.log(torch.stack(token_probs)).sum()
+
+    # Caluclate the cross entropy by dividing the negative log-likelihood by the number of tokens.
+    cross_entropy = -log_likelihood / len(shifted_logits)
+
+    # Calculate the perplexity by taking the exponential of the cross entropy.
+    perplexity = torch.exp(cross_entropy).item()
     return perplexity
 
 
 def get_model_perplexities(split_name):
     memories = load_dataset("EleutherAI/pythia-memorized-evals")[split_name]
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     tokenizer = load_tokenizer(split_name)
     pythia_model = load_model(split_name)
     memories_dataset = HFMemoriesDataset(memories, tokenizer)
-    data_loader = DataLoader(memories_dataset, batch_size=128)
+    data_loader = DataLoader(memories_dataset, batch_size=64)
     all_perplexities = []
 
     with torch.no_grad():
         for batch in tqdm(data_loader, desc=f"Calculating perplexities for {split_name}"):
             tokenized_batch = tokenizer(batch, return_tensors="pt", max_length=512, truncation=True, padding=True)
             tokenized_batch.to(device)
-            labels = tokenized_batch["input_ids"][:, 1:].contiguous()
+            labels = tokenized_batch["input_ids"]
 
             outputs = pythia_model(**tokenized_batch, labels=tokenized_batch["input_ids"])
             logits = outputs.logits.detach()
 
-            labels = tokenized_batch["input_ids"]
             perplexities = [calculate_perplexity(logits[i], labels[i]) for i in range(len(logits))]
-            all_perplexities += [perplexity.item() for perplexity in perplexities]
+            all_perplexities += perplexities
 
     perplexities_df = memories.to_pandas()[["index"]]
     perplexities_df["perplexity"] = all_perplexities
