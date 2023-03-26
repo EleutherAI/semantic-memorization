@@ -4,9 +4,11 @@ from accelerate import Accelerator
 from datasets import load_dataset
 from natsort import natsorted
 from tqdm import tqdm
+from datetime import datetime
 import plotly.express as px
 import pandas as pd
 import torch
+import os
 
 class HFMemoriesDataset(Dataset):
     is_dataframe = False
@@ -52,11 +54,12 @@ def calculate_perplexity(logits, labels):
 
     # Don't include the final token logits. There are no labels for
     # these since the sequence has ended.
-    shifted_logits = logits.detach()[:-1, :]
+    num_special_tokens = len(labels[labels == 0])
+    num_normal_tokens = len(labels) - num_special_tokens
 
-    for token_index in range(len(shifted_logits)):
+    for token_index in range(num_normal_tokens - 1):
         # Map the logits to probabilities.
-        predicted_probs = torch.softmax(shifted_logits[token_index], dim=0)
+        predicted_probs = torch.softmax(logits[token_index], dim=0)
         # Get the probability of the correct label.
         label_prob = predicted_probs[labels[token_index + 1]]
         # Store the probability for this token.
@@ -67,14 +70,15 @@ def calculate_perplexity(logits, labels):
     log_likelihood = torch.log(torch.stack(token_probs)).sum()
 
     # Caluclate the cross entropy by dividing the negative log-likelihood by the number of tokens.
-    cross_entropy = -log_likelihood / len(shifted_logits)
+    cross_entropy = -log_likelihood / len(token_probs)
 
     # Calculate the perplexity by taking the exponential of the cross entropy.
     perplexity = torch.exp(cross_entropy).item()
+    assert perplexity != float("inf"), "Perplexity is infinite. This is probably due to a token that has a probability of 0."
     return perplexity
 
 
-def get_model_perplexities(split_name):
+def get_model_perplexities(split_name, run_id):
     memories = load_dataset("EleutherAI/pythia-memorized-evals")[split_name]
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     tokenizer = load_tokenizer(split_name)
@@ -98,11 +102,14 @@ def get_model_perplexities(split_name):
     perplexities_df = memories.to_pandas()[["index"]]
     perplexities_df["perplexity"] = all_perplexities
     file_name = split_name.replace(".", "_")
-    perplexities_df.to_csv(f"./datasets/memories_{file_name}.csv", index=False)
+    perplexities_df.to_csv(f"./datasets/{run_id}/memories_{file_name}.csv", index=False)
     print(perplexities_df)
 
 
 if __name__ == "__main__":
+    run_id = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    os.makedirs(f"./datasets/{run_id}", exist_ok=True)
+
     all_memories_splits = load_dataset("EleutherAI/pythia-memorized-evals")
     model_sizes = (
         natsorted(set([split_name.split("uped.")[-1] for split_name in all_memories_splits if "m" in split_name]))
@@ -115,4 +122,4 @@ if __name__ == "__main__":
         for split_name in ordered_splits:
             # split_name = "deduped.12b"
             # split_name = "deduped.410m"
-            get_model_perplexities(split_name)
+            get_model_perplexities(split_name, run_id)
