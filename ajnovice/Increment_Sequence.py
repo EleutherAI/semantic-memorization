@@ -18,17 +18,20 @@ def __increasing_sequence_alphanumeric(lst):
 
 
 def __extract_numeric_and_string_parts(element):
-    numeric_part = ''
-    string_part = ''
-    element= str(element)
-    for c in element:
-        if c.isdigit():
-            numeric_part += c
-        else:
-            string_part += c
-    if numeric_part:
-        numeric_part = int(numeric_part)
-    return numeric_part, string_part
+    try:
+        numeric_part = ''
+        string_part = ''
+        element = str(element)
+        for c in element:
+            if c.isdigit():
+                numeric_part += c
+            else:
+                string_part += c
+        if numeric_part:
+            numeric_part = int(numeric_part)
+        return numeric_part, string_part
+    except:
+        return 0, ''
 
 
 def __morse_to_alpha(morse_seq):
@@ -74,3 +77,27 @@ def increasing_sequence(seq):
         pass
     return __increasing_sequence_alphanumeric(seq)
 
+
+def __count_increasing_sequences(seq):
+    try:
+        count = 0
+        i = 0
+        while i < len(seq):
+            j = i + 1
+            while j < len(seq) and str(seq[j]) > str(seq[j - 1]):
+                j += 1
+            if j - i > 1:
+                count += 1
+            i = j
+        return count
+    except:
+        return 0
+
+
+def count_increasing_sequences(seq):
+    try:
+        if __is_morse():
+            seq = __morse_to_alpha(seq)
+    except:
+        pass
+    return __count_increasing_sequences(seq)
