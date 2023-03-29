@@ -101,3 +101,21 @@ def count_increasing_sequences(seq):
     except:
         pass
     return __count_increasing_sequences(seq)
+
+
+def __count_non_increasing_subsequences(sequence):
+    count = 0
+    i = 0
+    while i < len(sequence):
+        j = i + 1
+        while j < len(sequence) and str(sequence[j]) <= str(sequence[j - 1]):
+            j += 1
+        if j - i > 1:
+            count += 1
+        i = j
+    return count
+
+
+# print(__count_non_increasing_subsequences(['1', '2', '3', '1', '2', '3', '1', '2', '3']))
+# print(__count_non_increasing_subsequences(['N', 'NN', 'NNN', 'N', 'NN', 'NNN', 'N', 'NN', 'NNN']))
+# print(__count_non_increasing_subsequences(['@N', '@N@N', '@N@N@N', '@N', '@N@N', '@N@N@N', '@N', '@N@N', '@N@N@N']))
