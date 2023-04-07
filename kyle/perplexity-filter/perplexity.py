@@ -7,28 +7,24 @@ from tqdm import tqdm
 from datetime import datetime
 import plotly.express as px
 import pandas as pd
+import numpy as np
 import torch
 import os
 
-class HFMemoriesDataset(Dataset):
+class PileDataset(Dataset):
     is_dataframe = False
 
-    def __init__(self, memories, tokenizer, sample=None):
+    def __init__(self, memories, tokenizer):
         self.tokenizer = tokenizer
         self.memories = memories
-        if sample is not None:
-            self.memories = self.memories.to_pandas().sample(sample)
-            self.is_dataframe = True
 
     def __getitem__(self, index):
-        memory_record = (
-            self.memories.iloc[index] if self.is_dataframe else self.memories[index]
-        )
-        decoded_text = self.tokenizer.decode(memory_record["tokens"])
+        tokens = self.memories.iloc[index]["tokens"][:64]
+        decoded_text = self.tokenizer.decode(tokens)
         return decoded_text
 
     def __len__(self):
-        return len(self.memories)
+        return len(self.memories["index"])
 
 
 def load_tokenizer(split_name):
@@ -44,7 +40,8 @@ def load_model(split_name):
     isDeduped = split_name.startswith("deduped")
     model = split_name.split("duped.")[-1]
     corresponding_model = f"EleutherAI/pythia-{model}{'-deduped' if isDeduped else ''}"
-    return GPTNeoXForCausalLM.from_pretrained(corresponding_model, device_map="sequential", load_in_8bit=True).eval()
+    # device_map = { "": 0, "gpt_neox.embed_in": 1, "gpt_neox.final_layer_norm": 1}
+    return GPTNeoXForCausalLM.from_pretrained(corresponding_model, device_map="auto", load_in_8bit=True)
 
 
 def calculate_perplexity(logits, labels):
@@ -74,21 +71,47 @@ def calculate_perplexity(logits, labels):
 
     # Calculate the perplexity by taking the exponential of the cross entropy.
     perplexity = torch.exp(cross_entropy).item()
-    assert perplexity != float("inf"), "Perplexity is infinite. This is probably due to a token that has a probability of 0."
+    # assert perplexity != float("inf"), "Perplexity is infinite. This is probably due to a token that has a probability of 0."
     return perplexity
 
 
-def get_model_perplexities(split_name, run_id):
-    memories = load_dataset("EleutherAI/pythia-memorized-evals")[split_name]
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+def get_batch_size(split_name):
+    size_batch_map = {
+        "70m": 256,
+        "160m": 128,
+        "410m": 128,
+        "1b": 128,
+        "1.4b": 64,
+        "2.8b": 32,
+        "6.9b": 32,
+        "12b": 16
+    }
+    model_size = ".".join(split_name.split(".")[1:])
+    return size_batch_map[model_size]
+
+
+def get_dataset(dataset, split_name, sample=None):
+    if dataset == "pile":
+        data_scheme = split_name.split(".")[0]
+        dataset = load_dataset(f"EleutherAI/pile-{data_scheme}-pythia-random-sampled")["train"].to_pandas()
+    else:
+        dataset = load_dataset("EleutherAI/pythia-memorized-evals")[split_name].to_pandas()
+
+    return dataset if sample is None else dataset.sample(sample).reset_index(drop=True)
+
+
+def get_model_perplexities(split_name, run_id, dataset):
+    pile_sequences = get_dataset(dataset, split_name)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     tokenizer = load_tokenizer(split_name)
     pythia_model = load_model(split_name)
-    memories_dataset = HFMemoriesDataset(memories, tokenizer)
-    data_loader = DataLoader(memories_dataset, batch_size=64)
-    all_perplexities = []
+    pile_dataset = PileDataset(pile_sequences, tokenizer)
+    batch_size = get_batch_size(split_name)
+    data_loader = DataLoader(pile_dataset, batch_size=batch_size)
+    all_perplexities = np.array([])
 
     with torch.no_grad():
-        for batch in tqdm(data_loader, desc=f"Calculating perplexities for {split_name}"):
+        for batch in tqdm(data_loader, desc=f"Calculating {dataset} perplexities for {split_name}"):
             tokenized_batch = tokenizer(batch, return_tensors="pt", max_length=512, truncation=True, padding=True)
             tokenized_batch.to(device)
             labels = tokenized_batch["input_ids"]
@@ -97,29 +120,31 @@ def get_model_perplexities(split_name, run_id):
             logits = outputs.logits.detach()
 
             perplexities = [calculate_perplexity(logits[i], labels[i]) for i in range(len(logits))]
-            all_perplexities += perplexities
+            all_perplexities = np.append(all_perplexities, perplexities)
 
-    perplexities_df = memories.to_pandas()[["index"]]
-    perplexities_df["perplexity"] = all_perplexities
+    perplexities_df = pd.DataFrame({
+        "index": pile_sequences["index"],
+        "perplexity": all_perplexities
+    })
     file_name = split_name.replace(".", "_")
-    perplexities_df.to_csv(f"./datasets/{run_id}/memories_{file_name}.csv", index=False)
+    perplexities_df.to_csv(f"./datasets/{run_id}/{dataset}_{file_name}.csv", index=False)
     print(perplexities_df)
 
 
 if __name__ == "__main__":
-    run_id = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    os.makedirs(f"./datasets/{run_id}", exist_ok=True)
+    experiment_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    os.makedirs(f"./datasets/{experiment_timestamp}", exist_ok=True)
 
-    all_memories_splits = load_dataset("EleutherAI/pythia-memorized-evals")
-    model_sizes = (
-        natsorted(set([split_name.split("uped.")[-1] for split_name in all_memories_splits if "m" in split_name]))
-        # Omit the billions of parameters model because it's too big to fit in memory at the moment
-        # natsorted(set(([split_name.split("uped.")[-1] for split_name in all_memories_splits if "b" in split_name])))
-    )
+    # Comemnting out the 1b+ models because there are bugs where perplexity is infinite
+    # model_sizes = ["70m", "160m", "410m", "1b", "1.4b", "2.8b", "6.9b", "12b"]
+    model_sizes = ["70m", "160m", "410m"]
 
-    for pile_dataset in ["deduped", "duped"]:
-        ordered_splits = [f"{pile_dataset}.{model_size}" for model_size in model_sizes]
-        for split_name in ordered_splits:
-            # split_name = "deduped.12b"
-            # split_name = "deduped.410m"
-            get_model_perplexities(split_name, run_id)
+    for data_scheme in ["deduped", "duped"]:
+        for dataset in ["pile", "memories"]:
+            for split_name in [f"{data_scheme}.{model_size}" for model_size in model_sizes]:
+                # split_name = "deduped.12b"
+                # split_name = "deduped.160m"
+                # split_name = "deduped.2.8b"
+                # split_name = "deduped.1b"
+                # split_name = "deduped.410m"
+                get_model_perplexities(split_name, experiment_timestamp, dataset)
