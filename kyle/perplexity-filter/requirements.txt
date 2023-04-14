@@ -1,0 +1,9 @@
+torch
+transformers
+accelerate
+datasets
+pandas
+numpy
+plotly
+tqdm
+ipykernel
