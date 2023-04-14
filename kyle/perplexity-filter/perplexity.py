@@ -2,7 +2,6 @@ from transformers import AutoTokenizer, GPTNeoXForCausalLM
 from torch.utils.data import Dataset, DataLoader
 from accelerate import Accelerator
 from datasets import load_dataset
-from natsort import natsorted
 from tqdm import tqdm
 from datetime import datetime
 import plotly.express as px
@@ -31,7 +30,7 @@ def load_tokenizer(split_name):
     isDeduped = split_name.startswith("deduped")
     model = split_name.split("duped.")[-1]
     corresponding_model = f"EleutherAI/pythia-{model}{'-deduped' if isDeduped else ''}"
-    tokenizer =  AutoTokenizer.from_pretrained(corresponding_model, load_in_8bit=True)
+    tokenizer =  AutoTokenizer.from_pretrained(corresponding_model)
     tokenizer.pad_token = tokenizer.eos_token
     return tokenizer
 
@@ -41,7 +40,7 @@ def load_model(split_name):
     model = split_name.split("duped.")[-1]
     corresponding_model = f"EleutherAI/pythia-{model}{'-deduped' if isDeduped else ''}"
     # device_map = { "": 0, "gpt_neox.embed_in": 1, "gpt_neox.final_layer_norm": 1}
-    return GPTNeoXForCausalLM.from_pretrained(corresponding_model, device_map="auto", load_in_8bit=True)
+    return GPTNeoXForCausalLM.from_pretrained(corresponding_model, device_map="auto")
 
 
 def calculate_perplexity(logits, labels):
@@ -77,14 +76,14 @@ def calculate_perplexity(logits, labels):
 
 def get_batch_size(split_name):
     size_batch_map = {
-        "70m": 256,
-        "160m": 128,
-        "410m": 128,
-        "1b": 128,
-        "1.4b": 64,
-        "2.8b": 32,
-        "6.9b": 32,
-        "12b": 16
+        "70m": 512,
+        "160m": 512,
+        "410m": 512,
+        "1b": 512,
+        "1.4b": 512,
+        "2.8b": 512,
+        "6.9b": 128,
+        "12b": 128
     }
     model_size = ".".join(split_name.split(".")[1:])
     return size_batch_map[model_size]
@@ -92,8 +91,8 @@ def get_batch_size(split_name):
 
 def get_dataset(dataset, split_name, sample=None):
     if dataset == "pile":
-        data_scheme = split_name.split(".")[0]
-        dataset = load_dataset(f"EleutherAI/pile-{data_scheme}-pythia-random-sampled")["train"].to_pandas()
+        scheme = split_name.split(".")[0]
+        dataset = load_dataset(f"EleutherAI/pile-{scheme}-pythia-random-sampled")["train"].to_pandas()
     else:
         dataset = load_dataset("EleutherAI/pythia-memorized-evals")[split_name].to_pandas()
 
@@ -101,7 +100,7 @@ def get_dataset(dataset, split_name, sample=None):
 
 
 def get_model_perplexities(split_name, run_id, dataset):
-    pile_sequences = get_dataset(dataset, split_name)
+    pile_sequences = get_dataset(dataset, split_name, sample=1000)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     tokenizer = load_tokenizer(split_name)
     pythia_model = load_model(split_name)
@@ -142,9 +141,10 @@ if __name__ == "__main__":
     for data_scheme in ["deduped", "duped"]:
         for dataset in ["pile", "memories"]:
             for split_name in [f"{data_scheme}.{model_size}" for model_size in model_sizes]:
-                # split_name = "deduped.12b"
+                split_name = "deduped.12b"
                 # split_name = "deduped.160m"
-                # split_name = "deduped.2.8b"
+                # split_name = "deduped.6.9b"
                 # split_name = "deduped.1b"
                 # split_name = "deduped.410m"
+                print(f"Calculating perplexities for {split_name} on {dataset} dataset")
                 get_model_perplexities(split_name, experiment_timestamp, dataset)
