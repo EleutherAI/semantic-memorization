@@ -1,7 +1,7 @@
 from transformers import AutoTokenizer, GPTNeoXForCausalLM
 from torch.utils.data import Dataset, DataLoader
 from accelerate import Accelerator
-from datasets import load_dataset
+from datasets import load_dataset, ReadInstruction
 from tqdm import tqdm
 from datetime import datetime
 import plotly.express as px
@@ -55,9 +55,15 @@ def calculate_perplexity(logits, labels):
 
     for token_index in range(num_normal_tokens - 1):
         # Map the logits to probabilities.
-        predicted_probs = torch.softmax(logits[token_index], dim=0)
+        predicted_probs = torch.softmax(logits[token_index], dim=0, dtype=torch.float64)
         # Get the probability of the correct label.
         label_prob = predicted_probs[labels[token_index + 1]]
+
+        # Check if the label probability is 0. This is likely due to a special token. If this is the case,
+        # break and stop calculating the perplexity for this sequence.
+        if label_prob == 0:
+            break
+
         # Store the probability for this token.
         token_probs.append(label_prob.detach())
 
@@ -79,20 +85,30 @@ def get_batch_size(split_name):
         "70m": 512,
         "160m": 512,
         "410m": 512,
-        "1b": 512,
-        "1.4b": 512,
-        "2.8b": 512,
-        "6.9b": 128,
-        "12b": 128
+        "1b": 256,
+        "1.4b": 256,
+        "2.8b": 128,
+        "6.9b": 64,
+        "12b": 64
     }
     model_size = ".".join(split_name.split(".")[1:])
     return size_batch_map[model_size]
 
 
-def get_dataset(dataset, split_name, sample=None):
-    if dataset == "pile":
+def get_dataset(dataset_name, split_name, sample=None):
+    dataset = None
+
+    if dataset_name.split("-")[0] == "pile":
         scheme = split_name.split(".")[0]
-        dataset = load_dataset(f"EleutherAI/pile-{scheme}-pythia-random-sampled")["train"].to_pandas()
+        pile_path = f"EleutherAI/pile-{scheme}-pythia-random-sampled"
+        lower_index = 0 if dataset_name == "pile-1" else 50
+        upper_index = 50 if dataset_name == "pile-1" else 100
+        print(f"Loading {pile_path} {lower_index}-{upper_index}%")
+        pile_tokens = load_dataset(pile_path, split=ReadInstruction("train", from_=lower_index, to=upper_index, unit="%", rounding="pct1_dropremainder")).to_pandas()[["index", "tokens"]]
+        if dataset is None:
+            dataset = pile_tokens
+        else:
+            dataset = pd.concat([dataset, pile_tokens])
     else:
         dataset = load_dataset("EleutherAI/pythia-memorized-evals")[split_name].to_pandas()
 
@@ -100,7 +116,7 @@ def get_dataset(dataset, split_name, sample=None):
 
 
 def get_model_perplexities(split_name, run_id, dataset):
-    pile_sequences = get_dataset(dataset, split_name, sample=1000)
+    pile_sequences = get_dataset(dataset, split_name, sample=None)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     tokenizer = load_tokenizer(split_name)
     pythia_model = load_model(split_name)
@@ -129,22 +145,21 @@ def get_model_perplexities(split_name, run_id, dataset):
     perplexities_df.to_csv(f"./datasets/{run_id}/{dataset}_{file_name}.csv", index=False)
     print(perplexities_df)
 
-
-if __name__ == "__main__":
+def main():
     experiment_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     os.makedirs(f"./datasets/{experiment_timestamp}", exist_ok=True)
 
-    # Comemnting out the 1b+ models because there are bugs where perplexity is infinite
-    # model_sizes = ["70m", "160m", "410m", "1b", "1.4b", "2.8b", "6.9b", "12b"]
-    model_sizes = ["70m", "160m", "410m"]
-
-    for data_scheme in ["deduped", "duped"]:
-        for dataset in ["pile", "memories"]:
-            for split_name in [f"{data_scheme}.{model_size}" for model_size in model_sizes]:
-                split_name = "deduped.12b"
+    for model_size in ["70m", "160m", "410m", "1b", "1.4b", "2.8b", "6.9b", "12b"]:
+        for data_scheme in ["deduped", "duped"]:
+            for dataset in ["pile-1", "pile-2", "memories"]:
+                split_name = f"{data_scheme}.{model_size}"
+                # split_name = "deduped.12b"
                 # split_name = "deduped.160m"
                 # split_name = "deduped.6.9b"
                 # split_name = "deduped.1b"
                 # split_name = "deduped.410m"
                 print(f"Calculating perplexities for {split_name} on {dataset} dataset")
                 get_model_perplexities(split_name, experiment_timestamp, dataset)
+
+if __name__ == "__main__":
+    main()

@@ -6,4 +6,3 @@ pandas
 numpy
 plotly
 tqdm
-ipykernel
