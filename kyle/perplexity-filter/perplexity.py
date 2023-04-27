@@ -39,7 +39,6 @@ def load_model(split_name):
     isDeduped = split_name.startswith("deduped")
     model = split_name.split("duped.")[-1]
     corresponding_model = f"EleutherAI/pythia-{model}{'-deduped' if isDeduped else ''}"
-    # device_map = { "": 0, "gpt_neox.embed_in": 1, "gpt_neox.final_layer_norm": 1}
     return GPTNeoXForCausalLM.from_pretrained(corresponding_model, device_map="auto")
 
 
@@ -55,14 +54,15 @@ def calculate_perplexity(logits, labels):
 
     for token_index in range(num_normal_tokens - 1):
         # Map the logits to probabilities.
-        predicted_probs = torch.softmax(logits[token_index], dim=0, dtype=torch.float64)
+        predicted_probs = torch.softmax(logits[token_index], dim=0, dtype=torch.float16)
         # Get the probability of the correct label.
         label_prob = predicted_probs[labels[token_index + 1]]
 
-        # Check if the label probability is 0. This is likely due to a special token. If this is the case,
-        # break and stop calculating the perplexity for this sequence.
+        # Check if the label probability is 0. This is likely due a rounding error. Recalculate
+        # the probability using double precision.
         if label_prob == 0:
-            break
+            predicted_probs = torch.softmax(logits[token_index], dim=0, dtype=torch.float64)
+            label_prob = predicted_probs[labels[token_index + 1]]
 
         # Store the probability for this token.
         token_probs.append(label_prob.detach())
@@ -151,7 +151,7 @@ def main():
 
     for model_size in ["70m", "160m", "410m", "1b", "1.4b", "2.8b", "6.9b", "12b"]:
         for data_scheme in ["deduped", "duped"]:
-            for dataset in ["pile-1", "pile-2", "memories"]:
+            for dataset in ["memories", "pile-1", "pile-2"]:
                 split_name = f"{data_scheme}.{model_size}"
                 # split_name = "deduped.12b"
                 # split_name = "deduped.160m"
