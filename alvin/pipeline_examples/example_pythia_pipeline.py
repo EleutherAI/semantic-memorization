@@ -8,8 +8,9 @@ import pandas as pd
 # for flexibility between separate experiments.
 #
 # TODO: You'll need to change this based on your own directory structure.
-# `os.path.dirname(os.path.abspath(__file__))` is viable, 
-# but __file__ is not available in the interactive interpreter.
+# something like `os.path.dirname(os.path.abspath(__file__))` and trace upwards 
+# to the repo root is viable as well, but __file__ is not available 
+# in the interactive interpreter.
 repo_root = '/home/alvin/research/semantic-memorization'
 sys.path.append(repo_root)
 
