@@ -1,3 +1,11 @@
+"""
+This file contains the code for running batch inference on the Pythia models. We can save results from
+the inferences to a CSV file for later analysis. This is useful for calculating perplexity, entropy,
+and other metrics.
+
+Example Usage: python inference.py --models=410m,1b,12b --schemes=duped --datasets=memories,pile --sample-size=100000
+"""
+
 from transformers import AutoTokenizer, GPTNeoXForCausalLM
 from torch.utils.data import Dataset, DataLoader
 from datasets import load_dataset, ReadInstruction
