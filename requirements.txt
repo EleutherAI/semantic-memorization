@@ -1,0 +1,11 @@
+pandas
+numpy
+torch
+torchvision
+torchaudio
+transformers
+accelerate
+datasets
+tqdm
+black
+pylint
