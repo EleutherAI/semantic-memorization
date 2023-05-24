@@ -2,4 +2,4 @@
 line-length = 150
 
 [tool.pylint.format]
-max-line-length = 120
+max-line-length = 150
