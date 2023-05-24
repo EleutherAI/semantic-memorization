@@ -24,6 +24,7 @@ class PileDataset(Dataset):
     The wrapped around the Pile-derived pandas dataframe. This allows us to use the
     PyTorch DataLoader to load the data in batches.
     """
+
     def __init__(self, memories, tokenizer):
         self.tokenizer = tokenizer
         self.memories = memories
@@ -225,7 +226,6 @@ def save_inference_log(split_name: str, run_id: str, dataset: pd.DataFrame, batc
     """
     logits = outputs.logits.detach()
     perplexities = [calculate_perplexity(logits[i], labels[i]) for i in range(len(logits))]
-    all_perplexities = np.append(all_perplexities, perplexities)
     inference_logs = []
 
     batch_sequence_ids = batch[0]
@@ -310,5 +310,5 @@ def main():
                 run_model_inferences(split_name, experiment_timestamp, dataset, args.sample_size)
 
 
-if __name_ == "__main__":
+if __name__ == "__main__":
     main()
