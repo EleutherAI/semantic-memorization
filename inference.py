@@ -6,6 +6,7 @@ and other metrics.
 Example Usage: python inference.py --models=410m,1b,12b --schemes=duped --datasets=memories,pile --sample-size=100000
 """
 
+from transformers.modeling_outputs import CausalLMOutputWithPast
 from transformers import AutoTokenizer, GPTNeoXForCausalLM
 from torch.utils.data import Dataset, DataLoader
 from datasets import load_dataset, ReadInstruction
@@ -19,8 +20,10 @@ import os
 
 
 class PileDataset(Dataset):
-    is_dataframe = False
-
+    """
+    The wrapped around the Pile-derived pandas dataframe. This allows us to use the
+    PyTorch DataLoader to load the data in batches.
+    """
     def __init__(self, memories, tokenizer):
         self.tokenizer = tokenizer
         self.memories = memories
@@ -53,7 +56,8 @@ def load_model(split_name):
 
 
 def calculate_perplexity(logits: torch.Tensor, labels: torch.Tensor) -> torch.float64:
-    """Clauclate the perplexity of a sequence given the logits and labels
+    """
+    Clauclate the perplexity of a sequence given the logits and labels
 
     Args:
         logits (torch.Tensor): The logits for the model's generation
@@ -62,7 +66,6 @@ def calculate_perplexity(logits: torch.Tensor, labels: torch.Tensor) -> torch.fl
     Returns:
         torch.float64: The model's perplexity for the given sequence
     """
-
     # Store the probabilities for each token. These will be summed later, but having the
     # individual probabilities is helpful for debugging.
     token_probs = []
@@ -81,9 +84,7 @@ def calculate_perplexity(logits: torch.Tensor, labels: torch.Tensor) -> torch.fl
         # Check if the label probability is 0. This is likely due a rounding error. Recalculate
         # the probability using double precision.
         if label_prob == 0:
-            predicted_probs = torch.softmax(
-                logits[token_index], dim=0, dtype=torch.float64
-            )
+            predicted_probs = torch.softmax(logits[token_index], dim=0, dtype=torch.float64)
             label_prob = predicted_probs[labels[token_index + 1]]
 
         # Store the probability for this token.
@@ -103,7 +104,8 @@ def calculate_perplexity(logits: torch.Tensor, labels: torch.Tensor) -> torch.fl
 
 
 def get_batch_size(model_name: str) -> int:
-    """Get the optimal batch size for the current model. This is based on the model's size
+    """
+    Get the optimal batch size for the current model. This is based on the model's size
     where the batch size is the largest that can fit on our GPUs. Yiu may need to adjust
     this if you have a different GPU.
 
@@ -128,7 +130,8 @@ def get_batch_size(model_name: str) -> int:
 
 
 def get_dataset(dataset_name: str, split_name: str, sample: int = None) -> pd.DataFrame:
-    """Read the given dataframe from HuggingFace, process, and return the sequences as
+    """
+    Read the given dataframe from HuggingFace, process, and return the sequences as
     a pandas dataframe.
 
     Args:
@@ -137,9 +140,8 @@ def get_dataset(dataset_name: str, split_name: str, sample: int = None) -> pd.Da
         sample (int, optional): The number of samples to take from the dataset. Defaults to None.
 
     Returns:
-        pd.DataFrame: _description_
+        pd.DataFrame: The pandas dataframe storing the dataset
     """
-
     dataset = None
     if dataset_name.split("-")[0] == "pile":
         scheme = split_name.split(".")[0]
@@ -164,14 +166,21 @@ def get_dataset(dataset_name: str, split_name: str, sample: int = None) -> pd.Da
         else:
             dataset = pd.concat([dataset, pile_tokens])
     else:
-        dataset = load_dataset("EleutherAI/pythia-memorized-evals")[
-            split_name
-        ].to_pandas()
+        dataset = load_dataset("EleutherAI/pythia-memorized-evals")[split_name].to_pandas()
 
     return dataset if sample is None else dataset.sample(sample).reset_index(drop=True)
 
 
-def get_model_inferences(split_name, run_id, dataset, sample_size):
+def run_model_inferences(split_name: str, run_id: str, dataset: str, sample_size: int = None):
+    """
+    Run inference for the given model and dataset. Save the results to a CSV file.
+
+    Args:
+        split_name (str): The model+scheme used to determine the tokenizer and model
+        run_id (str): The timestamp for this run
+        dataset (str): The dataset to run inference on
+        sample_size (int, optional): The maximum number of random samples run inference on. Defaults to None.
+    """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     tokenizer = load_tokenizer(split_name)
     pythia_model = load_model(split_name)
@@ -179,11 +188,9 @@ def get_model_inferences(split_name, run_id, dataset, sample_size):
     pile_dataset = PileDataset(pile_sequences, tokenizer)
     batch_size = get_batch_size(split_name)
     data_loader = DataLoader(pile_dataset, batch_size=batch_size)
-    all_perplexities = np.array([])
-    inference_logs = []
 
     with torch.no_grad():
-        desc = f"Calculating {dataset} perplexities for {split_name}"
+        desc = f"Collecting {dataset} inference responses for {split_name}"
         for batch in tqdm(data_loader, desc=desc):
             batch_sequences = batch[1]
             tokenized_batch = tokenizer(
@@ -201,31 +208,41 @@ def get_model_inferences(split_name, run_id, dataset, sample_size):
                 labels=tokenized_batch["input_ids"],
                 output_attentions=True,
             )
-            logits = outputs.logits.detach()
-
-            perplexities = [
-                calculate_perplexity(logits[i], labels[i]) for i in range(len(logits))
-            ]
-            all_perplexities = np.append(all_perplexities, perplexities)
-
-            batch_sequence_ids = batch[0]
-            for index, id_tensor in enumerate(batch_sequence_ids):
-                inference_log = {
-                    "index": id_tensor.detach().item(),
-                    "perplexity": perplexities[index],
-                    "loss": outputs.loss.detach().item(),
-                }
-                for layer_index, attention_layer in enumerate(outputs.attentions):
-                    sequence_attention = attention_layer[index].detach().view(torch.float32).tolist()
-                    inference_log[f"attn_{layer_index}"] = sequence_attention
-                inference_logs.append(inference_log)
+            save_inference_log(split_name, run_id, dataset, batch, labels, outputs)
 
 
+def save_inference_log(split_name: str, run_id: str, dataset: pd.DataFrame, batch: tuple, labels: torch.Tensor, outputs: CausalLMOutputWithPast):
+    """
+    Extract the desired data from the model response and save it to a CSV file.
 
-    inference__logs_df = pd.DataFrame(inference_logs)
+    Args:
+        split_name (str): The model+scheme used to determine the tokenizer and model
+        run_id (str): The timestamp for this run
+        dataset (str): The dataset to run inference on
+        batch (tuple): The input batch containing the sequence ids and sequences
+        labels (torch.Tensor): The labels for the batch. Used to calculate perplexity
+        outputs (CausalLMOutputWithPast): The response from the Pythia model
+    """
+    logits = outputs.logits.detach()
+    perplexities = [calculate_perplexity(logits[i], labels[i]) for i in range(len(logits))]
+    all_perplexities = np.append(all_perplexities, perplexities)
+    inference_logs = []
+
+    batch_sequence_ids = batch[0]
+    for index, id_tensor in enumerate(batch_sequence_ids):
+        inference_log = {
+            "index": id_tensor.detach().item(),
+            "perplexity": perplexities[index],
+            "mean_loss": outputs.loss.detach().item() / len(labels[index]),
+        }
+        for layer_index, attention_layer in enumerate(outputs.attentions):
+            sequence_attention = attention_layer[index].detach().tolist()
+            inference_log[f"attn_{layer_index}"] = sequence_attention
+        inference_logs.append(inference_log)
+
     file_name = split_name.replace(".", "_")
-    inference__logs_df.to_csv(f"inferences/{run_id}/{dataset}_{file_name}.csv", index=False)
-    print(inference__logs_df)
+    inference_logs_df = pd.DataFrame(inference_logs)
+    inference_logs_df.to_csv(f"datasets/{run_id}/{dataset}_{file_name}.csv", index=False, mode="a")
 
 
 def parse_cli_args():
@@ -240,9 +257,7 @@ def parse_cli_args():
         default=models_args_default,
     )
 
-    schemes_args_help = (
-        "The data scheme to get the perplexities for. Valid options are: deduped, duped"
-    )
+    schemes_args_help = "The data scheme to get the perplexities for. Valid options are: deduped, duped"
     schemes_args_default = ["deduped", "duped"]
     parser.add_argument(
         "--schemes",
@@ -253,7 +268,7 @@ def parse_cli_args():
     )
 
     dataset_arg_help = "The dataset in which to get inference responses for. Valid options are: memories, pile."
-    datasets_args_default = ["memories", "pile"]
+    datasets_args_default = ["pile", "memories"]
     parser.add_argument(
         "--datasets",
         type=str,
@@ -262,9 +277,7 @@ def parse_cli_args():
         default=datasets_args_default,
     )
 
-    sample_size_arg_help = (
-        "The number of samples to take from the dataset. Defaults to None."
-    )
+    sample_size_arg_help = "The number of samples to take from the dataset. Defaults to None."
     parser.add_argument(
         "--sample-size",
         type=int,
@@ -294,10 +307,8 @@ def main():
             for dataset in args.datasets if isinstance(args.datasets, list) else args.datasets.split(","):
                 split_name = f"{data_scheme}.{model_size}"
                 print(f"Collecting inferences for {split_name} on {dataset} dataset")
-                get_model_inferences(
-                    split_name, experiment_timestamp, dataset, args.sample_size
-                )
+                run_model_inferences(split_name, experiment_timestamp, dataset, args.sample_size)
 
 
-if __name__ == "__main__":
+if __name_ == "__main__":
     main()
