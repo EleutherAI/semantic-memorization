@@ -1,3 +1,10 @@
+"""
+The purpose of this file is to evaluate the classification performance of the filters.
+You can register your filter by adding the entry to the dicitonary at the bottom
+of the file. The key is the name of the category that the filter is supposed to detect,
+and the value is the function that implements the filter. You should import your filtering
+method from the filters module.
+"""
 import os
 from datetime import datetime
 
