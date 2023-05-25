@@ -1,5 +1,6 @@
 pandas
 numpy
+scikit-learn
 torch
 torchvision
 torchaudio
@@ -9,4 +10,4 @@ datasets
 tqdm
 black
 pylint
-scikit-learn
+pytest
