@@ -2,6 +2,9 @@
 # Edit at https://www.toptal.com/developers/gitignore?templates=python,visualstudiocode,pycharm,jetbrains,linux,vim,data
 
 
+!datasets/eval/Pythia_70m_Deduped_Low_Perplexity_Labeling_Formatted.csv
+
+*.zip
 .vscode
 ### Data ###
 *.csv
