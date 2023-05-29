@@ -31,7 +31,7 @@ def generate_token_string_histogram(token_series: pd.Series, delimiter: str = '_
 
 def get_highly_duplicated_filter_func(histogram: Counter, frequency_threshold: int = 1, delimiter: str = '_') -> Callable[[List[int]], bool]:
     """
-    Generates a filter function that checks if a list of token indices is highly duplicated based on a threshold.
+    Generates a filter function that checks if a list of token indices is highly duplicated.
 
     Args:
         histogram (Counter): Histogram of strings of token indices.
@@ -39,7 +39,7 @@ def get_highly_duplicated_filter_func(histogram: Counter, frequency_threshold: i
         delimiter (str, optional): Delimiter to use for concatenation. Defaults to '_'.
 
     Returns:
-        Callable[[List[int]], bool]: Filter function that checks if a list of token indices is highly duplicated based on a threshold.
+        Callable[[List[int]], bool]: Filter function that checks if a list of token indices is highly duplicated.
     """
     def _highly_duplicated_filter_func(token_indices: List[int]) -> bool:
         """
