@@ -16,25 +16,25 @@ def _concat_token_indices(token_indices: List[int], delimiter: str = '_') -> str
     """
     return delimiter.join([str(t) for t in token_indices])
 
-def generate_token_string_histogram(token_series: pd.Series, delimiter: str = '_') -> Counter:
+def generate_sequence_histogram(token_indices: pd.Series, delimiter: str = '_') -> Counter[str, int]:
     """
     Generates a histogram from a Pandas Series of token indices. The histogram is based on the concatenated strings of token indices.
 
     Args:
-        token_series (pd.Series): Series of token indices.
+        token_index_sequences (pd.Series): Pandas Series of token indices.
         delimiter (str, optional): Delimiter to use for concatenation. Defaults to '_'.
 
     Returns:
-        Counter: Histogram of strings of token indices.
+        Counter[str, int]: Histogram of strings of token indices.
     """
-    return Counter(token_series.apply(lambda x: _concat_token_indices(x, delimiter=delimiter)))
+    return Counter(token_indices.apply(lambda x: _concat_token_indices(x, delimiter=delimiter)))
 
-def get_highly_duplicated_filter_func(histogram: Counter, frequency_threshold: int = 1, delimiter: str = '_') -> Callable[[List[int]], bool]:
+def get_highly_duplicated_filter_func(histogram: Counter[str, int], frequency_threshold: int = 1, delimiter: str = '_') -> Callable[[List[int]], bool]:
     """
     Generates a filter function that checks if a list of token indices is highly duplicated.
 
     Args:
-        histogram (Counter): Histogram of strings of token indices.
+        histogram (Counter[str, int]): Histogram of strings of token indices.
         frequency_threshold (int, optional): Frequency threshold to use for filtering. Defaults to 1.
         delimiter (str, optional): Delimiter to use for concatenation. Defaults to '_'.
 
