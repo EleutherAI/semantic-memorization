@@ -186,7 +186,7 @@ def run_model_inferences(split_name: str, run_id: str, dataset: str, features: l
             tokenized_batch = tokenizer(
                 batch_sequences,
                 return_tensors="pt",
-                max_length=512,
+                max_length=64,
                 truncation=True,
                 padding=True,
             )
@@ -219,8 +219,10 @@ def save_inference_log(
     perplexities = [calculate_perplexity(logits[i], labels[i]) for i in range(len(logits))] if "ppl" in features else None
     inference_logs = []
     batch_sequence_ids = batch[0]
+    e=1e-12 
     
     for index, id_tensor in enumerate(batch_sequence_ids):
+        total_entropy = []
         inference_log = {"index": id_tensor.detach().item()}
         if "loss" in features:
             inference_log["loss"] = outputs.loss.detach().item() / len(labels[index])
@@ -230,8 +232,16 @@ def save_inference_log(
             inference_log["sequence_perplexity"] = perplexities[index][2]
         if "attn" in features:
             for layer_index, attention_layer in enumerate(outputs.attentions):
-                sequence_attention = attention_layer[index].detach().tolist()
-                inference_log[f"attn_{layer_index}"] = sequence_attention
+                sequence_attention = attention_layer[index].detach()
+                for head_index, head in enumerate(sequence_attention):
+                    attention_head = head.detach().cpu().numpy()
+                    attention_head += e #adding 'e' to attention weights that are 0 to avoid log zero error while calculating entropy. entropy = - ∑(w * log(w))
+                    attention_entropy = -np.sum(attention_head * np.log2(attention_head)) 
+                    total_entropy.append(attention_entropy)
+                    inference_log[f"head{head_index+1}_layer{layer_index+1}"] = attention_entropy
+            average_entropy = np.mean(total_entropy)
+            inference_log[f"avg entropy"] = average_entropy
+                
 
         inference_logs.append(inference_log)
 
