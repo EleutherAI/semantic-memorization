@@ -235,7 +235,7 @@ def save_inference_log(
                 sequence_attention = attention_layer[index].detach()
                 for head_index, head in enumerate(sequence_attention):
                     attention_head = head.detach().cpu().numpy()
-                    attention_head += e #adding 'e' to attention weights that are 0 to avoid log zero error while calculating entropy. entropy = - ∑(w * log(w))
+                    attention_head += e #adding 'e' to attention weights that are 0 to avoid log zero error while calculating entropy. Entropy = - ∑(w * log(w))
                     attention_entropy = -np.sum(attention_head * np.log2(attention_head)) 
                     total_entropy.append(attention_entropy)
                     inference_log[f"head{head_index+1}_layer{layer_index+1}"] = attention_entropy
