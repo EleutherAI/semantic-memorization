@@ -1,3 +1,0 @@
-python inference.py --models=70m --schemes=deduped --datasets=memories --features=attn --sample_size=50000
-
-python inference.py --models=70m --schemes=deduped --datasets=pile --features=attn --sample_size=50000
