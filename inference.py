@@ -19,6 +19,7 @@ import torch
 import os
 
 
+
 class PileDataset(Dataset):
     """
     The wrapped around the Pile-derived pandas dataframe. This allows us to use the
@@ -154,7 +155,7 @@ def get_dataset(dataset_name: str, split_name: str, sample: int = None) -> pd.Da
     if dataset_name.split("-")[0] == "pile":
         scheme = split_name.split(".")[0]
         pile_path = f"EleutherAI/pile-{scheme}-pythia-random-sampled"
-        dataset = load_dataset(pile_path, split="train").to_pandas()[["index", "tokens"]]
+        dataset = load_dataset(pile_path, split="train[:50000]").to_pandas()[["index", "tokens"]]
     else:
         dataset = load_dataset("EleutherAI/pythia-memorized-evals")[split_name].to_pandas()
 
@@ -178,6 +179,7 @@ def run_model_inferences(split_name: str, run_id: str, dataset: str, features: l
     pile_dataset = PileDataset(pile_sequences, tokenizer)
     batch_size = get_batch_size(split_name)
     data_loader = DataLoader(pile_dataset, batch_size=batch_size)
+    
 
     with torch.no_grad():
         desc = f"Collecting {dataset} inference responses for {split_name}"
@@ -186,7 +188,7 @@ def run_model_inferences(split_name: str, run_id: str, dataset: str, features: l
             tokenized_batch = tokenizer(
                 batch_sequences,
                 return_tensors="pt",
-                max_length=64,
+                max_length=512,
                 truncation=True,
                 padding=True,
             )
@@ -198,7 +200,25 @@ def run_model_inferences(split_name: str, run_id: str, dataset: str, features: l
                 labels=tokenized_batch["input_ids"],
                 output_attentions=True,
             )
+            
+            
             save_inference_log(split_name, run_id, dataset, batch, labels, outputs, features)
+
+
+def gini(array):
+    """Calculate the Gini coefficient of a numpy array. Ref: https://github.com/oliviaguest/gini"""
+    # based on bottom eq: http://www.statsdirect.com/help/content/image/stat0206_wmf.gif
+    # from: http://www.statsdirect.com/help/default.htm#nonparametric_methods/gini.htm
+    array = array.flatten() #all values are treated equally, arrays must be 1d
+    if np.amin(array) < 0:
+        array -= np.amin(array)  
+    #array += 0.0000001  
+    array = np.sort(array)  
+    index = np.arange(1,array.shape[0]+1)  
+    n = array.shape[0] 
+    return ((np.sum((2 * index - n  - 1) * array)) / (n * np.sum(array)))  
+
+ 
 
 
 def save_inference_log(
@@ -219,10 +239,11 @@ def save_inference_log(
     perplexities = [calculate_perplexity(logits[i], labels[i]) for i in range(len(logits))] if "ppl" in features else None
     inference_logs = []
     batch_sequence_ids = batch[0]
-    e=1e-12 
+    e=1e-8
     
     for index, id_tensor in enumerate(batch_sequence_ids):
         total_entropy = []
+        total_gini = []
         inference_log = {"index": id_tensor.detach().item()}
         if "loss" in features:
             inference_log["loss"] = outputs.loss.detach().item() / len(labels[index])
@@ -231,16 +252,31 @@ def save_inference_log(
             inference_log["generation_perplexity"] = perplexities[index][1]
             inference_log["sequence_perplexity"] = perplexities[index][2]
         if "attn" in features:
-            for layer_index, attention_layer in enumerate(outputs.attentions):
-                sequence_attention = attention_layer[index].detach()
+            for layer_index, attention_layer in enumerate(outputs.attentions):  
+                sequence_attention = attention_layer[index].detach()  
+                head_e = []
+                gini_head = []
+
                 for head_index, head in enumerate(sequence_attention):
-                    attention_head = head.detach().cpu().numpy()
-                    attention_head += e #adding 'e' to attention weights that are 0 to avoid log zero error while calculating entropy. Entropy = - ∑(w * log(w))
-                    attention_entropy = -np.sum(attention_head * np.log2(attention_head)) 
-                    total_entropy.append(attention_entropy)
-                    inference_log[f"head{head_index+1}_layer{layer_index+1}"] = attention_entropy
+                    attention_head = head.detach().cpu().numpy() #(64, 64)
+                    #inference_log[f"head{head_index+1}_layer{layer_index+1}"] = attention_head
+                    attention_head += e #adding 'e' to attention weights that are 0 to avoid log zero error while calculating entropy. entropy = - ∑(w * log(w))
+                    gini_coefficient = gini(attention_head)
+                    gini_head.append(gini_coefficient)
+                    head_entropy = -np.sum(attention_head * np.log(attention_head)) 
+                    head_e.append(head_entropy)
+                    inference_log[f"gini_head{head_index+1}_layer{layer_index+1}"] = gini_coefficient
+                    inference_log[f"gini_head{head_index+1}_layer{layer_index+1}"] = head_entropy
+                
+                avg_head = np.mean(head_e)
+                avg_head_gini = np.mean(gini_head)
+                total_entropy.append(avg_head)
+                total_gini.append(avg_head_gini)
+
             average_entropy = np.mean(total_entropy)
+            average_gini = np.mean(total_gini)
             inference_log[f"avg entropy"] = average_entropy
+            inference_log[f"avg gini"] = average_gini 
                 
 
         inference_logs.append(inference_log)
