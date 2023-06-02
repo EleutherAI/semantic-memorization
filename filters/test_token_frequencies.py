@@ -1,4 +1,3 @@
-from typing import Iterable, Mapping
 from .token_frequencies import token_frequencies, merge_token_frequencies
 
 def test_token_frequencies():
