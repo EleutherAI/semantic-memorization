@@ -155,7 +155,7 @@ def get_dataset(dataset_name: str, split_name: str, sample: int = None) -> pd.Da
     if dataset_name.split("-")[0] == "pile":
         scheme = split_name.split(".")[0]
         pile_path = f"EleutherAI/pile-{scheme}-pythia-random-sampled"
-        dataset = load_dataset(pile_path, split="train[:50000]").to_pandas()[["index", "tokens"]]
+        dataset = load_dataset(pile_path, split="train").to_pandas()[["index", "tokens"]]
     else:
         dataset = load_dataset("EleutherAI/pythia-memorized-evals")[split_name].to_pandas()
 
@@ -180,7 +180,6 @@ def run_model_inferences(split_name: str, run_id: str, dataset: str, features: l
     batch_size = get_batch_size(split_name)
     data_loader = DataLoader(pile_dataset, batch_size=batch_size)
     
-
     with torch.no_grad():
         desc = f"Collecting {dataset} inference responses for {split_name}"
         for batch in tqdm(data_loader, desc=desc):
@@ -209,16 +208,13 @@ def gini(array):
     """Calculate the Gini coefficient of a numpy array. Ref: https://github.com/oliviaguest/gini"""
     # based on bottom eq: http://www.statsdirect.com/help/content/image/stat0206_wmf.gif
     # from: http://www.statsdirect.com/help/default.htm#nonparametric_methods/gini.htm
-    array = array.flatten() #all values are treated equally, arrays must be 1d
+    array = array.flatten()
     if np.amin(array) < 0:
         array -= np.amin(array)  
-    #array += 0.0000001  
     array = np.sort(array)  
     index = np.arange(1,array.shape[0]+1)  
     n = array.shape[0] 
     return ((np.sum((2 * index - n  - 1) * array)) / (n * np.sum(array)))  
-
- 
 
 
 def save_inference_log(
@@ -257,16 +253,16 @@ def save_inference_log(
                 head_e = []
                 gini_head = []
 
-                for head_index, head in enumerate(sequence_attention):
-                    attention_head = head.detach().cpu().numpy() #(64, 64)
-                    #inference_log[f"head{head_index+1}_layer{layer_index+1}"] = attention_head
+                for head_index, head in enumerate(sequence_attention): 
+                    attention_head = head.detach().cpu().numpy() 
+                    inference_log[f"head{head_index+1}_layer{layer_index+1}"] = attention_head
                     attention_head += e #adding 'e' to attention weights that are 0 to avoid log zero error while calculating entropy. entropy = - ∑(w * log(w))
                     gini_coefficient = gini(attention_head)
                     gini_head.append(gini_coefficient)
                     head_entropy = -np.sum(attention_head * np.log(attention_head)) 
                     head_e.append(head_entropy)
                     inference_log[f"gini_head{head_index+1}_layer{layer_index+1}"] = gini_coefficient
-                    inference_log[f"gini_head{head_index+1}_layer{layer_index+1}"] = head_entropy
+                    inference_log[f"entropy_head{head_index+1}_layer{layer_index+1}"] = head_entropy
                 
                 avg_head = np.mean(head_e)
                 avg_head_gini = np.mean(gini_head)
@@ -278,7 +274,6 @@ def save_inference_log(
             inference_log[f"avg entropy"] = average_entropy
             inference_log[f"avg gini"] = average_gini 
                 
-
         inference_logs.append(inference_log)
 
     file_name = split_name.replace(".", "_")
