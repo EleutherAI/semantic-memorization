@@ -19,7 +19,6 @@ import torch
 import os
 
 
-
 class PileDataset(Dataset):
     """
     The wrapped around the Pile-derived pandas dataframe. This allows us to use the
@@ -199,8 +198,6 @@ def run_model_inferences(split_name: str, run_id: str, dataset: str, features: l
                 labels=tokenized_batch["input_ids"],
                 output_attentions=True,
             )
-            
-            
             save_inference_log(split_name, run_id, dataset, batch, labels, outputs, features)
 
 
