@@ -280,6 +280,8 @@ def save_inference_log(
     inference_logs_df = pd.DataFrame(inference_logs)
     inference_logs_df.to_csv(f"datasets/{run_id}/{dataset}_{file_name}.csv", index=False, mode="a")
 
+    return inference_logs
+
 
 def parse_cli_args():
     parser = ArgumentParser()
