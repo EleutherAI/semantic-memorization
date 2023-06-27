@@ -440,5 +440,3 @@ tags
 aflah/data/pythia-410m.pkl
 aflah/data/pythia-70m.pkl_with_lrs
 aflah/data/pythia-1b.pkl_with_chunk_and_k
-analysis/ 
-plots/
