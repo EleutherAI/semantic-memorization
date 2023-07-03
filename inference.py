@@ -198,7 +198,8 @@ def run_model_inferences(split_name: str, run_id: str, dataset: str, features: l
                 labels=tokenized_batch["input_ids"],
                 output_attentions=True,
             )
-            save_inference_log(split_name, run_id, dataset, batch, labels, outputs, features)
+            inference_logs = accumilate_inference_log(batch[0], labels, outputs, features)
+            save_inference_log(split_name, run_id, dataset, inference_logs)
 
 
 def gini(array):
@@ -214,24 +215,21 @@ def gini(array):
     return ((np.sum((2 * index - n  - 1) * array)) / (n * np.sum(array)))  
 
 
-def save_inference_log(
-    split_name: str, run_id: str, dataset: pd.DataFrame, batch: tuple, labels: torch.Tensor, outputs: CausalLMOutputWithPast, features: list
+def accumilate_inference_log(
+    batch_sequence_ids: list, labels: torch.Tensor, outputs: CausalLMOutputWithPast, features: list
 ):
     """
     Extract the desired data from the model response and save it to a CSV file.
 
     Args:
-        split_name (str): The model+scheme used to determine the tokenizer and model
-        run_id (str): The timestamp for this run
-        dataset (str): The dataset to run inference on
-        batch (tuple): The input batch containing the sequence ids and sequences
+        batch_sequence_ids (list): The list containing the sequence ids
         labels (torch.Tensor): The labels for the batch. Used to calculate perplexity
         outputs (CausalLMOutputWithPast): The response from the Pythia model
+        features (list): The list of features to calculate. A subset of [loss, ppl, attn]
     """
     logits = outputs.logits.detach()
     perplexities = [calculate_perplexity(logits[i], labels[i]) for i in range(len(logits))] if "ppl" in features else None
     inference_logs = []
-    batch_sequence_ids = batch[0]
     e=1e-8
     
     for index, id_tensor in enumerate(batch_sequence_ids):
@@ -273,12 +271,20 @@ def save_inference_log(
                 
         inference_logs.append(inference_log)
 
+    return inference_logs
+
+def save_inference_log(split_name: str, run_id: str, dataset: pd.DataFrame, inference_logs: list):
+    """Saves the accumilated inference log in a pandas dataframe
+
+    Args:
+        split_name (str): The model+scheme used to determine the tokenizer and model
+        run_id (str): The timestamp for this run
+        dataset (str): The dataset to run inference on
+        inference_logs (list): Accumilated inference logs
+    """
     file_name = split_name.replace(".", "_")
     inference_logs_df = pd.DataFrame(inference_logs)
     inference_logs_df.to_csv(f"datasets/{run_id}/{dataset}_{file_name}.csv", index=False, mode="a")
-
-    return inference_logs
-
 
 def parse_cli_args():
     parser = ArgumentParser()
