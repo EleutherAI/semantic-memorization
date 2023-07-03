@@ -61,8 +61,11 @@ void compute_over_batch(vector<vector<int>>& batch, int batch_idx){
     saveduplicates.open("./duplicates/" + to_string(batch_idx) + ".json");
     saveduplicates << "{\n";
 
-    
+    bool isfirst = true;    
     for (auto hash:visited){
+        if(isfirst) isfirst = false;
+        else saveduplicates << ",\n";
+        
         saveduplicates << "\"" << hash << "\":[";
 
         bool first_pos = true;
@@ -73,10 +76,10 @@ void compute_over_batch(vector<vector<int>>& batch, int batch_idx){
             }
             saveduplicates << "[" << position.first << ", " << position.second << "]";
         }
-        saveduplicates << "],\n";
+        saveduplicates << "]";
     }
 
-    saveduplicates << "}";
+    saveduplicates << "\n}";
 
 }
 
