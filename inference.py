@@ -250,7 +250,6 @@ def accumilate_inference_log(
 
                 for head_index, head in enumerate(sequence_attention): 
                     attention_head = head.detach().cpu().numpy() 
-                    inference_log[f"head{head_index+1}_layer{layer_index+1}"] = attention_head
                     attention_head += e #adding 'e' to attention weights that are 0 to avoid log zero error while calculating entropy. Entropy = - ∑(w * log(w))
                     gini_coefficient = gini(attention_head)
                     gini_head.append(gini_coefficient)
