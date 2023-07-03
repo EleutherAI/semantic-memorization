@@ -3,3 +3,6 @@
 
 # Pandas dataframes
 *.hdf
+
+# Generated duplicate jsons
+duplicates/

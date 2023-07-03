@@ -1,5 +1,4 @@
 #include<bits/stdc++.h>
-#include "tqdm/tqdm.h"
 using namespace std;
 
 // Iterates over the pile and counts the number of times each token is memorized and not memorized
