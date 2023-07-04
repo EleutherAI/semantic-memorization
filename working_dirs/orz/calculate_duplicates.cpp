@@ -50,15 +50,13 @@ void compute_duplicates(
 }
 
 
-// Calculates number of duplicates in a batch and saves the results into a json file
-void compute_over_batch(vector<vector<int>>& batch, int batch_idx){
-    vector<set<pair<int,int>>> bucket(MOD + 10);
-    set<int> visited;
-    compute_duplicates(bucket, visited, batch, batch_idx);
-
-
+void save_duplicates(
+    vector<set<pair<int,int>>>& bucket,
+    set<int>& visited,
+    int rank
+){
     ofstream saveduplicates;
-    saveduplicates.open("./duplicates/" + to_string(batch_idx) + ".json");
+    saveduplicates.open("./duplicates/" + to_string(rank) + ".json");
     saveduplicates << "{\n";
 
     bool isfirst = true;    
@@ -80,14 +78,13 @@ void compute_over_batch(vector<vector<int>>& batch, int batch_idx){
     }
 
     saveduplicates << "\n}";
-
 }
 
 // Iterates over the dataset and generates batches for computation.
 // Processes are synced after every batch
 void iterate_over_dataset(int start_idx, int end_idx){
     ifstream ios;
-    ios.open("/scratch/pile/standard/document.bin", ios::binary);
+    ios.open("/mnt/ssd-1/pile_preshuffled/standard/document.bin", ios::binary);
 
     // Each sequence has 2049 tokens, every iteration during training 
     // has a global batch size of 1024
@@ -98,8 +95,13 @@ void iterate_over_dataset(int start_idx, int end_idx){
 
     // Only print messages on rank 0
     if(start_idx == 0)
-        cout << "Starting Iteration\n";
+        cout << "Starting Iteration" << endl;
     ios.seekg(start_idx*1024*2049*sizeof(uint16_t));
+
+
+    // Extra stuff
+    vector<set<pair<int,int>>> bucket(MOD + 10);
+    set<int> visited;
     for (int i = start_idx*1024;i < end_idx*1024; i += 1024){
         ios.read((char*)buffer, length*sizeof(uint16_t));
 
@@ -116,13 +118,14 @@ void iterate_over_dataset(int start_idx, int end_idx){
             }
             batch.push_back(sequence);
         }
-
-        compute_over_batch(batch, i);
+        compute_duplicates(bucket, visited, batch, i);
+        MPI_Barrier(MPI_COMM_WORLD);
 
         if(start_idx == 0)
-            cout << "Completed Iteration: " << i / 1024 << "/" << end_idx << endl;
-        MPI_Barrier(MPI_COMM_WORLD);
+            cout << "Completed Iteration: " << i / 1024 + 1<< "/" << end_idx << endl;
+        
     }
+    save_duplicates(bucket, visited, start_idx);
 }
 
 int main(int argc, char**argv){

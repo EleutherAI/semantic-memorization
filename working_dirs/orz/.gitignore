@@ -1,5 +1,6 @@
 # Any C++ Output files
 *.out
+*.o
 
 # Pandas dataframes
 *.hdf
