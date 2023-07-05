@@ -53,7 +53,7 @@ def load_model(split_name):
     isDeduped = split_name.startswith("deduped")
     model = split_name.split("duped.")[-1]
     corresponding_model = f"EleutherAI/pythia-{model}{'-deduped' if isDeduped else ''}"
-    return GPTNeoXForCausalLM.from_pretrained(corresponding_model, device_map="auto")
+    return GPTNeoXForCausalLM.from_pretrained(corresponding_model, device_map="auto", torch_dtype=torch.float16)
 
 
 def calculate_perplexity(logits: torch.Tensor, labels: torch.Tensor) -> torch.float64:
@@ -293,7 +293,6 @@ def parse_cli_args():
         "--models",
         type=str,
         help=models_arg_help,
-        choices=models_args_default,
         default=models_args_default,
     )
 
