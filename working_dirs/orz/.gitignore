@@ -1,0 +1,9 @@
+# Any C++ Output files
+*.out
+*.o
+
+# Pandas dataframes
+*.hdf
+
+# Generated duplicate jsons
+duplicates/
