@@ -65,6 +65,7 @@ def parse_cli_args():
 
     return parser.parse_args()
 
+
 def get_dataset(dataset_name: str, split_name: str, sample_size: int = None) -> pd.DataFrame:
     """
     Get the dataset for the given dataset name and split name.
@@ -89,6 +90,7 @@ def get_dataset(dataset_name: str, split_name: str, sample_size: int = None) -> 
 
     return dataset if sample_size is None else dataset.sample(sample_size).reset_index(drop=True)
 
+
 def register_args_based_filters(histogram: Counter[str, int]) -> None:
     """
     Register argument-based filters, e.g. highly duplicated filters, to the pipeline singleton instance.
@@ -98,9 +100,10 @@ def register_args_based_filters(histogram: Counter[str, int]) -> None:
     """
     duplicated_filter_func = get_highly_duplicated_filter_func(histogram)
 
-    @PIPELINE.register_filter(output_column='is_duplicated')
+    @PIPELINE.register_filter(output_column="is_duplicated")
     def highly_duplicated_filter(row: pd.Series) -> bool:
         return duplicated_filter_func(row)
+
 
 def run_pipeline(run_id: str, dataset_name: str, split_name: str, sample_size: int = None) -> None:
     """
