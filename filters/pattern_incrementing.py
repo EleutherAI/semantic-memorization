@@ -156,8 +156,8 @@ def incrementing_sequences_filter(text):
     # When post cleanup the list is too small, it is not an incrementing sequence
     # This threshold leads to P, R, F1 of 0.71, 0.63, 0.67
     # These values are subject to change based on the dataset and the code modifications done post procuring them
-    # if len(ls) < 4:
-    #     return False
+    if len(ls) < 4:
+        return False
     
     # Basic case where numbers are only increasing or decreasing
     isIncreasing = True
