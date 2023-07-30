@@ -47,8 +47,46 @@ def break_and_compare_wrapper(ls: list, start_k: int, end_k: int) -> list:
     """
     # end_k is inclusive
     ls = list(ls)
+    length = len(ls)
+    half = length // 2
     for k in range(start_k, end_k + 1):
+        for i in range(0, half):
+            # remove some tokens from the end as well
+            rem = 2
+            # when rem = 0 -> 0.91      0.73      0.81
+            # when rem = 1 -> 0.91      0.78      0.84
+            # when rem = 2 -> 0.90      0.80      0.84 
+            # when rem = 3 -> 0.89      0.80      0.84
+            # when rem = 4 -> 0.89      0.80      0.84
+            # when rem = 5 -> 0.89      0.80      0.84
+            # when rem = 6 -> 0.89      0.80      0.84
+            for j in range(0, rem+1):
+                result = break_and_compare(ls[i:length - j], k)
+                if result:
+                    return result, k
+            result = break_and_compare(ls[i:], k)
+            if result:
+                return result, i, k
         result = break_and_compare(ls, k)
         if result:
             return result, k
     return [], -1
+
+if __name__ == "__main__":
+#     from transformers import AutoTokenizer
+#     inp = """0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+#  0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff"""
+#     tokenizer = AutoTokenizer.from_pretrained(
+#         "EleutherAI/pythia-70m-deduped",
+#     )
+#     inp = tokenizer(inp)['input_ids']
+#     print(inp)
+#     # for token in inp:
+#     #     print(token, tokenizer.decode(token))
+#     print(break_and_compare_wrapper(inp, 2, 30))
+    ls = [1]
+    start_k = 1
+    end_k = 3
+    expected = ([1], 1)
+    output = break_and_compare_wrapper(ls, start_k, end_k)
+    print(output)

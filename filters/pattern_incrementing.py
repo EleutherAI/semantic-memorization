@@ -1,6 +1,6 @@
 import re
 
-def replace_non_numeric_with_whitespace(text):
+def replace_non_numeric_with_whitespace(text: str) -> str:
     # Replace non-numeric characters with whitespace
     # cleaned_text = re.sub(r'[^0-9]', ' ', text)
     new_text = ""
@@ -39,7 +39,7 @@ def replace_non_numeric_with_whitespace(text):
     
     return cleaned_text
 
-def incrementing_sequences_filter(text):
+def incrementing_sequences_filter(text : str) -> bool:
     # count number of numeric and non-numeric characters
     num_numeric = 0
     num_non_numeric = 0

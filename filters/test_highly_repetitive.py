@@ -40,7 +40,7 @@ def test_break_and_compare_wrapper_matching_chunks_within_range():
     ls = [1, 2, 3, 1, 2, 3, 1, 2, 3]
     start_k = 2
     end_k = 4
-    expected = ([1, 2, 3], 3)
+    expected = ([1, 2, 3], 2)
     output = break_and_compare_wrapper(ls, start_k, end_k)
     assert output == expected, f"Test case 1 failed. Output: {output}, Expected: {expected}"
 
