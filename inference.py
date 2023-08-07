@@ -10,6 +10,7 @@ from transformers.modeling_outputs import CausalLMOutputWithPast
 from transformers import AutoTokenizer, GPTNeoXForCausalLM
 from torch.utils.data import Dataset, DataLoader
 from datasets import load_dataset, ReadInstruction
+from multiprocessing import Process
 from argparse import ArgumentParser
 from tqdm import tqdm
 from datetime import datetime
@@ -246,25 +247,10 @@ def accumilate_inference_log(
             inference_log["generation_perplexity"] = perplexities[index][1]
             inference_log["sequence_perplexity"] = perplexities[index][2]
         if "attn" in features:
+            process_args = [layer_index, attention_layer for layer_index, attention_layer in enumerate(outputs.attentions)]
+            p = Process(target=get_layer_entropy, args=(e, index, total_entropy, total_gini, inference_log, layer_index, attention_layer))
             for layer_index, attention_layer in enumerate(outputs.attentions):
-                sequence_attention = attention_layer[index].detach()
-                head_e = []
-                gini_head = []
-
-                for head_index, head in enumerate(sequence_attention):
-                    attention_head = head.detach().cpu().numpy()
-                    attention_head += e #adding 'e' to attention weights that are 0 to avoid log zero error while calculating entropy. Entropy = - ∑(w * log(w))
-                    gini_coefficient = gini(attention_head)
-                    gini_head.append(gini_coefficient)
-                    head_entropy = -np.sum(attention_head * np.log(attention_head))
-                    head_e.append(head_entropy)
-                    inference_log[f"gini_head{head_index+1}_layer{layer_index+1}"] = gini_coefficient
-                    inference_log[f"entropy_head{head_index+1}_layer{layer_index+1}"] = head_entropy
-
-                avg_head = np.mean(head_e)
-                avg_head_gini = np.mean(gini_head)
-                total_entropy.append(avg_head)
-                total_gini.append(avg_head_gini)
+                get_layer_entropy(e, index, total_entropy, total_gini, inference_log, layer_index, attention_layer)
 
             average_entropy = np.mean(total_entropy)
             average_gini = np.mean(total_gini)
@@ -274,6 +260,28 @@ def accumilate_inference_log(
         inference_logs.append(inference_log)
 
     return inference_logs
+
+
+def get_layer_entropy(e, index, total_entropy, total_gini, inference_log, layer_index, attention_layer):
+    sequence_attention = attention_layer[index].detach()
+    head_e = []
+    gini_head = []
+
+    for head_index, head in enumerate(sequence_attention):
+        attention_head = head.detach().cpu().numpy()
+        attention_head += e #adding 'e' to attention weights that are 0 to avoid log zero error while calculating entropy. Entropy = - ∑(w * log(w))
+        gini_coefficient = gini(attention_head)
+        gini_head.append(gini_coefficient)
+        head_entropy = -np.sum(attention_head * np.log(attention_head))
+        head_e.append(head_entropy)
+        inference_log[f"gini_head{head_index+1}_layer{layer_index+1}"] = gini_coefficient
+        inference_log[f"entropy_head{head_index+1}_layer{layer_index+1}"] = head_entropy
+
+    avg_head = np.mean(head_e)
+    avg_head_gini = np.mean(gini_head)
+    total_entropy.append(avg_head)
+    total_gini.append(avg_head_gini)
+
 
 def save_inference_log(split_name: str, run_id: str, dataset: pd.DataFrame, inference_logs: list):
     """Saves the accumilated inference log in a pandas dataframe
