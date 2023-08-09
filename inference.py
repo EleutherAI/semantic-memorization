@@ -247,8 +247,8 @@ def accumilate_inference_log(
             inference_log["generation_perplexity"] = perplexities[index][1]
             inference_log["sequence_perplexity"] = perplexities[index][2]
         if "attn" in features:
-            process_args = [layer_index, attention_layer for layer_index, attention_layer in enumerate(outputs.attentions)]
-            p = Process(target=get_layer_entropy, args=(e, index, total_entropy, total_gini, inference_log, layer_index, attention_layer))
+            # process_args = [layer_index, attention_layer for layer_index, attention_layer in enumerate(outputs.attentions)]
+            # p = Process(target=get_layer_entropy, args=(e, index, total_entropy, total_gini, inference_log, layer_index, attention_layer))
             for layer_index, attention_layer in enumerate(outputs.attentions):
                 get_layer_entropy(e, index, total_entropy, total_gini, inference_log, layer_index, attention_layer)
 
