@@ -165,7 +165,7 @@ def get_dataset(dataset_name: str, split_name: str, sample: int = None) -> pd.Da
     return dataset if sample is None else dataset.sample(sample).reset_index(drop=True)
 
 
-def run_model_inferences(split_name: str, run_id: str, dataset: str, features: list, sample_size: int = None):
+def run_model_inferences(split_name: str, run_id: str, dataset: str, features: list, batch_size: int, sample_size: int = None):
     """
     Run inference for the given model and dataset. Save the results to a CSV file.
 
@@ -180,7 +180,6 @@ def run_model_inferences(split_name: str, run_id: str, dataset: str, features: l
     pythia_model = load_model(split_name)
     pile_sequences = get_dataset(dataset, split_name, sample=sample_size)
     pile_dataset = PileDataset(pile_sequences, tokenizer)
-    batch_size = get_batch_size(split_name)
     data_loader = DataLoader(pile_dataset, batch_size=batch_size)
 
     with torch.no_grad():
@@ -345,6 +344,8 @@ def parse_cli_args():
         default=None,
     )
 
+    parser.add_argument("--batch_size", type=int, default=None, help="Batch size for inference")
+
     return parser.parse_args()
 
 
@@ -369,7 +370,8 @@ def main():
             for dataset in args.datasets if isinstance(args.datasets, list) else args.datasets.split(","):
                 split_name = f"{data_scheme}.{model_size}"
                 print(f"Collecting inferences for {split_name} on {dataset} dataset")
-                run_model_inferences(split_name, experiment_timestamp, dataset, args.features, args.sample_size)
+                batch_size = args.batch_size if args.batch_size is not None else get_batch_size(model_size)
+                run_model_inferences(split_name, experiment_timestamp, dataset, args.features, batch_size, args.sample_size)
 
 
 if __name__ == "__main__":
