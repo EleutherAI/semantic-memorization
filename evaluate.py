@@ -35,7 +35,7 @@ def log_mistakes_report(mistakes: pd.DataFrame, category: str, eval_timestamp: s
     mistakes.to_csv(f"{eval_directory}/mistakes_{eval_timestamp}_{category}.csv", index=False)
 
 
-def evaluate_filter(category: str, filter_function: function, dataset: pd.DataFrame, eval_timestamp: str) -> dict:
+def evaluate_filter(category: str, filter_function, dataset: pd.DataFrame, eval_timestamp: str) -> dict:
     """
     Evaluate the classification performance of the provided filter
 
@@ -48,7 +48,14 @@ def evaluate_filter(category: str, filter_function: function, dataset: pd.DataFr
     Returns:
         dict: The classification report of the filter
     """
-    filter_judgments = dataset["shortened_text"].progress_apply(filter_function)
+    filter_judgments = []
+    for i in tqdm(range(len(dataset))):
+        try:
+            filter_judgments.append(filter_function(dataset["shortened_text"][i]))
+        except:
+            filter_judgments.append(-1)
+
+    # filter_judgments = dataset["shortened_text"].progress_apply(filter_function)
     filter_labels = dataset["Category"].progress_apply(lambda c: c == category)
     report_dict = classification_report(filter_labels, filter_judgments, output_dict=True)
     evaluation_log = {
@@ -75,7 +82,7 @@ def evaluate(filters: dict):
     Args:
         filters (dict): The filters to evaluate. The key is the name of the category and value is the filter function.
     """
-    dataset = pd.read_csv("datasets/eval/Pythia_70m_Deduped_Low_Perplexity_Labeling_Formatted.csv")
+    dataset = pd.read_csv("datasets/eval/Pythia_70m_Deduped_Low_Perplexity_Labeling_Formatted")
     eval_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     eval_results = []
     for category, filter_function in filters.items():
