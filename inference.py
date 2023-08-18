@@ -137,8 +137,7 @@ def get_batch_size(model_name: str) -> int:
         "6.9b": 64,
         "12b": 64,
     }
-    model_size = ".".join(model_name.split(".")[1:])
-    return size_batch_map[model_size]
+    return size_batch_map[model_name]
 
 
 def get_dataset(dataset_name: str, split_name: str, sample: int = None) -> pd.DataFrame:
