@@ -7,3 +7,6 @@
 
 # Generated duplicate jsons
 duplicates/
+
+# Generated result dataframe and json files
+results/
