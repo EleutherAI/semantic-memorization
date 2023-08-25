@@ -10,6 +10,7 @@ from transformers.modeling_outputs import CausalLMOutputWithPast
 from transformers import AutoTokenizer, GPTNeoXForCausalLM
 from torch.utils.data import Dataset, DataLoader
 from datasets import load_dataset, ReadInstruction
+from multiprocessing import Process
 from argparse import ArgumentParser
 from tqdm import tqdm
 from datetime import datetime
@@ -53,7 +54,7 @@ def load_model(split_name):
     isDeduped = split_name.startswith("deduped")
     model = split_name.split("duped.")[-1]
     corresponding_model = f"EleutherAI/pythia-{model}{'-deduped' if isDeduped else ''}"
-    return GPTNeoXForCausalLM.from_pretrained(corresponding_model, device_map="auto")
+    return GPTNeoXForCausalLM.from_pretrained(corresponding_model, device_map="auto", torch_dtype=torch.float16)
 
 
 def calculate_perplexity(logits: torch.Tensor, labels: torch.Tensor) -> torch.float64:
@@ -69,46 +70,49 @@ def calculate_perplexity(logits: torch.Tensor, labels: torch.Tensor) -> torch.fl
     """
     # Store the probabilities for each token. These will be summed later, but having the
     # individual probabilities is helpful for debugging.
-    token_probs = []
+    try:
+        token_probs = []
 
-    # Don't include the final token logits. There are no labels for
-    # these since the sequence has ended.
-    num_special_tokens = len(labels[labels == 0])
-    num_normal_tokens = len(labels) - num_special_tokens
+        # Don't include the final token logits. There are no labels for
+        # these since the sequence has ended.
+        num_special_tokens = len(labels[labels == 0])
+        num_normal_tokens = len(labels) - num_special_tokens
 
-    for token_index in range(num_normal_tokens - 1):
-        # Map the logits to probabilities.
-        predicted_probs = torch.softmax(logits[token_index], dim=0, dtype=torch.float16)
-        # Get the probability of the correct label.
-        label_prob = predicted_probs[labels[token_index + 1]]
-
-        # Check if the label probability is 0. This is likely due a rounding error. Recalculate
-        # the probability using double precision.
-        if label_prob == 0:
-            predicted_probs = torch.softmax(logits[token_index], dim=0, dtype=torch.float64)
+        for token_index in range(num_normal_tokens - 1):
+            # Map the logits to probabilities.
+            predicted_probs = torch.softmax(logits[token_index], dim=0, dtype=torch.float16)
+            # Get the probability of the correct label.
             label_prob = predicted_probs[labels[token_index + 1]]
 
-        # Store the probability for this token.
-        token_probs.append(label_prob.detach())
+            # Check if the label probability is 0. This is likely due a rounding error. Recalculate
+            # the probability using double precision.
+            if label_prob == 0:
+                predicted_probs = torch.softmax(logits[token_index], dim=0, dtype=torch.float64)
+                label_prob = predicted_probs[labels[token_index + 1]]
 
-    mid_index = len(token_probs) // 2
-    prompt_ppl = None
-    log_likelihood = torch.log(torch.stack(token_probs[:mid_index])).sum()
-    cross_entropy = -log_likelihood / len(token_probs)
-    prompt_ppl = torch.exp(cross_entropy).item()
+            # Store the probability for this token.
+            token_probs.append(label_prob.detach())
 
-    generation_ppl = None
-    log_likelihood = torch.log(torch.stack(token_probs[mid_index:])).sum()
-    cross_entropy = -log_likelihood / len(token_probs)
-    generation_ppl = torch.exp(cross_entropy).item()
+        mid_index = len(token_probs) // 2
+        prompt_ppl = None
+        log_likelihood = torch.log(torch.stack(token_probs[:mid_index])).sum()
+        cross_entropy = -log_likelihood / len(token_probs)
+        prompt_ppl = torch.exp(cross_entropy).item()
 
-    sequence_ppl = None
-    log_likelihood = torch.log(torch.stack(token_probs)).sum()
-    cross_entropy = -log_likelihood / len(token_probs)
-    sequence_ppl = torch.exp(cross_entropy).item()
+        generation_ppl = None
+        log_likelihood = torch.log(torch.stack(token_probs[mid_index:])).sum()
+        cross_entropy = -log_likelihood / len(token_probs)
+        generation_ppl = torch.exp(cross_entropy).item()
 
-    # assert perplexity != float("inf"), "Perplexity is infinite. This is probably due to a token that has a probability of 0."
-    return prompt_ppl, generation_ppl, sequence_ppl
+        sequence_ppl = None
+        log_likelihood = torch.log(torch.stack(token_probs)).sum()
+        cross_entropy = -log_likelihood / len(token_probs)
+        sequence_ppl = torch.exp(cross_entropy).item()
+
+        return prompt_ppl, generation_ppl, sequence_ppl
+    except Exception as e:
+        print(f"Failed to calulcate perplexity: {e}")
+        return -1, -1, -1
 
 
 def get_batch_size(model_name: str) -> int:
@@ -133,8 +137,7 @@ def get_batch_size(model_name: str) -> int:
         "6.9b": 64,
         "12b": 64,
     }
-    model_size = ".".join(model_name.split(".")[1:])
-    return size_batch_map[model_size]
+    return size_batch_map[model_name]
 
 
 def get_dataset(dataset_name: str, split_name: str, sample: int = None) -> pd.DataFrame:
@@ -161,7 +164,7 @@ def get_dataset(dataset_name: str, split_name: str, sample: int = None) -> pd.Da
     return dataset if sample is None else dataset.sample(sample).reset_index(drop=True)
 
 
-def run_model_inferences(split_name: str, run_id: str, dataset: str, features: list, sample_size: int = None):
+def run_model_inferences(split_name: str, run_id: str, dataset: str, features: list, batch_size: int, sample_size: int = None):
     """
     Run inference for the given model and dataset. Save the results to a CSV file.
 
@@ -176,9 +179,8 @@ def run_model_inferences(split_name: str, run_id: str, dataset: str, features: l
     pythia_model = load_model(split_name)
     pile_sequences = get_dataset(dataset, split_name, sample=sample_size)
     pile_dataset = PileDataset(pile_sequences, tokenizer)
-    batch_size = get_batch_size(split_name)
     data_loader = DataLoader(pile_dataset, batch_size=batch_size)
-    
+
     with torch.no_grad():
         desc = f"Collecting {dataset} inference responses for {split_name}"
         for batch in tqdm(data_loader, desc=desc):
@@ -208,11 +210,11 @@ def gini(array):
     # from: http://www.statsdirect.com/help/default.htm#nonparametric_methods/gini.htm
     array = array.flatten()
     if np.amin(array) < 0:
-        array -= np.amin(array)  
-    array = np.sort(array)  
-    index = np.arange(1,array.shape[0]+1)  
-    n = array.shape[0] 
-    return ((np.sum((2 * index - n  - 1) * array)) / (n * np.sum(array)))  
+        array -= np.amin(array)
+    array = np.sort(array)
+    index = np.arange(1,array.shape[0]+1)
+    n = array.shape[0]
+    return ((np.sum((2 * index - n  - 1) * array)) / (n * np.sum(array)))
 
 
 def accumilate_inference_log(
@@ -231,7 +233,7 @@ def accumilate_inference_log(
     perplexities = [calculate_perplexity(logits[i], labels[i]) for i in range(len(logits))] if "ppl" in features else None
     inference_logs = []
     e=1e-8
-    
+
     for index, id_tensor in enumerate(batch_sequence_ids):
         total_entropy = []
         total_gini = []
@@ -243,34 +245,41 @@ def accumilate_inference_log(
             inference_log["generation_perplexity"] = perplexities[index][1]
             inference_log["sequence_perplexity"] = perplexities[index][2]
         if "attn" in features:
-            for layer_index, attention_layer in enumerate(outputs.attentions):  
-                sequence_attention = attention_layer[index].detach()  
-                head_e = []
-                gini_head = []
-
-                for head_index, head in enumerate(sequence_attention): 
-                    attention_head = head.detach().cpu().numpy() 
-                    attention_head += e #adding 'e' to attention weights that are 0 to avoid log zero error while calculating entropy. Entropy = - ∑(w * log(w))
-                    gini_coefficient = gini(attention_head)
-                    gini_head.append(gini_coefficient)
-                    head_entropy = -np.sum(attention_head * np.log(attention_head)) 
-                    head_e.append(head_entropy)
-                    inference_log[f"gini_head{head_index+1}_layer{layer_index+1}"] = gini_coefficient
-                    inference_log[f"entropy_head{head_index+1}_layer{layer_index+1}"] = head_entropy
-                
-                avg_head = np.mean(head_e)
-                avg_head_gini = np.mean(gini_head)
-                total_entropy.append(avg_head)
-                total_gini.append(avg_head_gini)
+            # process_args = [layer_index, attention_layer for layer_index, attention_layer in enumerate(outputs.attentions)]
+            # p = Process(target=get_layer_entropy, args=(e, index, total_entropy, total_gini, inference_log, layer_index, attention_layer))
+            for layer_index, attention_layer in enumerate(outputs.attentions):
+                get_layer_entropy(e, index, total_entropy, total_gini, inference_log, layer_index, attention_layer)
 
             average_entropy = np.mean(total_entropy)
             average_gini = np.mean(total_gini)
             inference_log[f"avg entropy"] = average_entropy
-            inference_log[f"avg gini"] = average_gini 
-                
+            inference_log[f"avg gini"] = average_gini
+
         inference_logs.append(inference_log)
 
     return inference_logs
+
+
+def get_layer_entropy(e, index, total_entropy, total_gini, inference_log, layer_index, attention_layer):
+    sequence_attention = attention_layer[index].detach()
+    head_e = []
+    gini_head = []
+
+    for head_index, head in enumerate(sequence_attention):
+        attention_head = head.detach().cpu().numpy()
+        attention_head += e #adding 'e' to attention weights that are 0 to avoid log zero error while calculating entropy. Entropy = - ∑(w * log(w))
+        gini_coefficient = gini(attention_head)
+        gini_head.append(gini_coefficient)
+        head_entropy = -np.sum(attention_head * np.log(attention_head))
+        head_e.append(head_entropy)
+        inference_log[f"gini_head{head_index+1}_layer{layer_index+1}"] = gini_coefficient
+        inference_log[f"entropy_head{head_index+1}_layer{layer_index+1}"] = head_entropy
+
+    avg_head = np.mean(head_e)
+    avg_head_gini = np.mean(gini_head)
+    total_entropy.append(avg_head)
+    total_gini.append(avg_head_gini)
+
 
 def save_inference_log(split_name: str, run_id: str, dataset: pd.DataFrame, inference_logs: list):
     """Saves the accumilated inference log in a pandas dataframe
@@ -293,7 +302,6 @@ def parse_cli_args():
         "--models",
         type=str,
         help=models_arg_help,
-        choices=models_args_default,
         default=models_args_default,
     )
 
@@ -335,6 +343,8 @@ def parse_cli_args():
         default=None,
     )
 
+    parser.add_argument("--batch_size", type=int, default=None, help="Batch size for inference")
+
     return parser.parse_args()
 
 
@@ -359,7 +369,8 @@ def main():
             for dataset in args.datasets if isinstance(args.datasets, list) else args.datasets.split(","):
                 split_name = f"{data_scheme}.{model_size}"
                 print(f"Collecting inferences for {split_name} on {dataset} dataset")
-                run_model_inferences(split_name, experiment_timestamp, dataset, args.features, args.sample_size)
+                batch_size = args.batch_size if args.batch_size is not None else get_batch_size(model_size)
+                run_model_inferences(split_name, experiment_timestamp, dataset, args.features, batch_size, args.sample_size)
 
 
 if __name__ == "__main__":
