@@ -1,5 +1,6 @@
 import re
 
+
 def replace_non_numeric_with_whitespace(text: str) -> str:
     # Replace non-numeric characters with whitespace
     # cleaned_text = re.sub(r'[^0-9]', ' ', text)
@@ -7,7 +8,7 @@ def replace_non_numeric_with_whitespace(text: str) -> str:
     for i in range(len(text)):
         if text[i].isdigit():
             new_text += text[i]
-        elif text[i] == "." and i > 0 and i < len(text)-1 and text[i-1].isdigit() and text[i+1].isdigit():
+        elif text[i] == "." and i > 0 and i < len(text) - 1 and text[i - 1].isdigit() and text[i + 1].isdigit():
             new_text += text[i]
         else:
             new_text += " "
@@ -29,17 +30,18 @@ def replace_non_numeric_with_whitespace(text: str) -> str:
         else:
             notValidFloat = True
             break
-            
+
     if notValidFloat:
         # Replace non-numeric characters with whitespace
-        cleaned_text = re.sub(r'[^0-9]', ' ', text)
+        cleaned_text = re.sub(r"[^0-9]", " ", text)
 
     # Replace multiple consecutive whitespaces with a single whitespace
-    cleaned_text = re.sub(r'\s+', ' ', cleaned_text)
-    
+    cleaned_text = re.sub(r"\s+", " ", cleaned_text)
+
     return cleaned_text
 
-def incrementing_sequences_filter(text : str) -> bool:
+
+def incrementing_sequences_filter(text: str) -> bool:
     # count number of numeric and non-numeric characters
     num_numeric = 0
     num_non_numeric = 0
@@ -69,26 +71,22 @@ def incrementing_sequences_filter(text : str) -> bool:
     # print("After removing all non-numeric characters with whitespace", ls)
 
     # Check for incrementing in chunks
-    # Adding this to handle cases like "A.1 , A.2 , A.3 , A.4, B.1 , B.2, B.3, C.1" 
+    # Adding this to handle cases like "A.1 , A.2 , A.3 , A.4, B.1 , B.2, B.3, C.1"
     ptr = 0
     min_max = {}
     chunk_num = 0
-    min_max[chunk_num] = (ls[ptr], ls[ptr+1], 2)
+    min_max[chunk_num] = (ls[ptr], ls[ptr + 1], 2)
     ptr += 1
-    while ptr < len(ls)-1:
-        if ls[ptr] < ls[ptr+1]:
-            min_max[chunk_num] = (
-                min(min_max[chunk_num][0], ls[ptr]),
-                max(min_max[chunk_num][1], ls[ptr+1]),
-                min_max[chunk_num][2] + 1
-            )
+    while ptr < len(ls) - 1:
+        if ls[ptr] < ls[ptr + 1]:
+            min_max[chunk_num] = (min(min_max[chunk_num][0], ls[ptr]), max(min_max[chunk_num][1], ls[ptr + 1]), min_max[chunk_num][2] + 1)
         else:
             chunk_num += 1
-            if ptr+2 < len(ls):
-                min_max[chunk_num] = (ls[ptr+1], ls[ptr+2], 1)
+            if ptr + 2 < len(ls):
+                min_max[chunk_num] = (ls[ptr + 1], ls[ptr + 2], 1)
             else:
-                min_max[chunk_num] = (ls[ptr+1], ls[ptr+1], 1)
-        
+                min_max[chunk_num] = (ls[ptr + 1], ls[ptr + 1], 1)
+
         ptr += 1
 
     # remove chunks with size 1
@@ -96,8 +94,8 @@ def incrementing_sequences_filter(text : str) -> bool:
 
     # if chunk ids are not consecutive, return False
     chunksAreConsecutive = True
-    for i in range(len(min_max)-1):
-        if i+1 not in min_max:
+    for i in range(len(min_max) - 1):
+        if i + 1 not in min_max:
             chunksAreConsecutive = False
             break
 
@@ -105,14 +103,14 @@ def incrementing_sequences_filter(text : str) -> bool:
 
     if chunksAreConsecutive:
         # if all chunks have same min value and last chunk's max value is less than first chunk's max value, return True
-        for i in range(len(min_max)-1):
-            if min_max[i][0] != min_max[i+1][0]:
+        for i in range(len(min_max) - 1):
+            if min_max[i][0] != min_max[i + 1][0]:
                 break
-            if i == len(min_max)-2 and min_max[i][1] <= min_max[0][1]:
+            if i == len(min_max) - 2 and min_max[i][1] <= min_max[0][1]:
                 return True
 
     # When the list is too small, it is not an incrementing sequence
-    # Some results to decide on the threshold (P, R, F1) 
+    # Some results to decide on the threshold (P, R, F1)
     # Without Condition   - 0.48      0.69      0.57
     # when threshold is 3 - 0.58      0.69      0.63
     # when threshold is 4 - 0.60      0.68      0.64
@@ -122,10 +120,10 @@ def incrementing_sequences_filter(text : str) -> bool:
     # These values are subject to change based on the dataset and the code modifications done post procuring them
     if len(ls) < 6:
         return False
-    
+
     index_to_remove = []
     # remove all repeating at fixed intervals
-    for i in range(len(ls)-1):
+    for i in range(len(ls) - 1):
         k = 1
         while k < len(ls):
             indices = []
@@ -141,7 +139,7 @@ def incrementing_sequences_filter(text : str) -> bool:
                 k += 1
             elif not anySame:
                 k += 1
-    
+
     # unravel the list
     index_to_remove = list(set(index_to_remove))
 
@@ -158,16 +156,16 @@ def incrementing_sequences_filter(text : str) -> bool:
     # These values are subject to change based on the dataset and the code modifications done post procuring them
     if len(ls) < 4:
         return False
-    
+
     # Basic case where numbers are only increasing or decreasing
     isIncreasing = True
     isDecreasing = True
-    for i in range(len(ls)-1):
-        if ls[i] > ls[i+1]:
+    for i in range(len(ls) - 1):
+        if ls[i] > ls[i + 1]:
             isIncreasing = False
             if not isDecreasing:
                 break
-        if ls[i] < ls[i+1]:
+        if ls[i] < ls[i + 1]:
             isDecreasing = False
             if not isIncreasing:
                 break
@@ -182,8 +180,8 @@ def incrementing_sequences_filter(text : str) -> bool:
     # break the list into chunks where each chunk is increasing
     increasing_chunks = []
     chunk = []
-    for i in range(len(ls)-1):
-        if ls[i] <= ls[i+1]:
+    for i in range(len(ls) - 1):
+        if ls[i] <= ls[i + 1]:
             chunk.append(ls[i])
         else:
             chunk.append(ls[i])
@@ -196,8 +194,8 @@ def incrementing_sequences_filter(text : str) -> bool:
     # break the list into chunks where each chunk is decreasing
     decreasing_chunks = []
     chunk = []
-    for i in range(len(ls)-1):
-        if ls[i] >= ls[i+1]:
+    for i in range(len(ls) - 1):
+        if ls[i] >= ls[i + 1]:
             chunk.append(ls[i])
         else:
             chunk.append(ls[i])
@@ -207,7 +205,7 @@ def incrementing_sequences_filter(text : str) -> bool:
         chunk.append(ls[-1])
         decreasing_chunks.append(chunk)
 
-    #print lengths of chunks
+    # print lengths of chunks
     # print("increasing_chunks", increasing_chunks)
     # print("decreasing_chunks", decreasing_chunks)
 
@@ -216,7 +214,7 @@ def incrementing_sequences_filter(text : str) -> bool:
         increasing_chunks.pop(0)
     if len(decreasing_chunks) >= 2 and len(decreasing_chunks[0]) != len(decreasing_chunks[1]):
         decreasing_chunks.pop(0)
-    
+
     # if last chunk is of unequal size remove it
     if len(increasing_chunks) >= 2 and len(increasing_chunks[-1]) != len(increasing_chunks[-2]):
         increasing_chunks.pop(-1)
@@ -230,21 +228,21 @@ def incrementing_sequences_filter(text : str) -> bool:
     for chunk in decreasing_chunks:
         if len(chunk) != len(decreasing_chunks[0]):
             return False
-    
-    #print lengths of chunks
+
+    # print lengths of chunks
     # print("increasing_chunks", increasing_chunks)
     # print("decreasing_chunks", decreasing_chunks)
 
     if len(increasing_chunks) > 1:
-        isIncreasing_increasing_chunks = [True]*len(increasing_chunks[0])
-        isDecreasing_increasing_chunks = [True]*len(increasing_chunks[0])
-        for i in range(len(increasing_chunks)-1):
+        isIncreasing_increasing_chunks = [True] * len(increasing_chunks[0])
+        isDecreasing_increasing_chunks = [True] * len(increasing_chunks[0])
+        for i in range(len(increasing_chunks) - 1):
             for j in range(len(increasing_chunks[i])):
-                if increasing_chunks[i][j] < increasing_chunks[i+1][j]:
+                if increasing_chunks[i][j] < increasing_chunks[i + 1][j]:
                     isDecreasing_increasing_chunks[j] = False
                     if not isIncreasing_increasing_chunks[j]:
                         break
-                if increasing_chunks[i][j] > increasing_chunks[i+1][j]:
+                if increasing_chunks[i][j] > increasing_chunks[i + 1][j]:
                     isIncreasing_increasing_chunks[j] = False
                     if not isDecreasing_increasing_chunks[j]:
                         break
@@ -253,15 +251,15 @@ def incrementing_sequences_filter(text : str) -> bool:
         isDecreasing_increasing_chunks = []
 
     if len(decreasing_chunks) > 1:
-        isIncreasing_decreasing_chunks = [True]*len(decreasing_chunks[0])
-        isDecreasing_decreasing_chunks = [True]*len(decreasing_chunks[0])
-        for i in range(len(decreasing_chunks)-1):
+        isIncreasing_decreasing_chunks = [True] * len(decreasing_chunks[0])
+        isDecreasing_decreasing_chunks = [True] * len(decreasing_chunks[0])
+        for i in range(len(decreasing_chunks) - 1):
             for j in range(len(decreasing_chunks[i])):
-                if decreasing_chunks[i][j] < decreasing_chunks[i+1][j]:
+                if decreasing_chunks[i][j] < decreasing_chunks[i + 1][j]:
                     isDecreasing_decreasing_chunks[j] = False
                     if not isIncreasing_decreasing_chunks[j]:
                         break
-                if decreasing_chunks[i][j] > decreasing_chunks[i+1][j]:
+                if decreasing_chunks[i][j] > decreasing_chunks[i + 1][j]:
                     isIncreasing_decreasing_chunks[j] = False
                     if not isDecreasing_decreasing_chunks[j]:
                         break
@@ -269,32 +267,44 @@ def incrementing_sequences_filter(text : str) -> bool:
         isIncreasing_decreasing_chunks = []
         isDecreasing_decreasing_chunks = []
 
-    largest_chunk_size = max(len(isIncreasing_increasing_chunks), len(isDecreasing_increasing_chunks), len(isIncreasing_decreasing_chunks), len(isDecreasing_decreasing_chunks))
+    largest_chunk_size = max(
+        len(isIncreasing_increasing_chunks),
+        len(isDecreasing_increasing_chunks),
+        len(isIncreasing_decreasing_chunks),
+        len(isDecreasing_decreasing_chunks),
+    )
     if len(isIncreasing_increasing_chunks) < largest_chunk_size:
-        isIncreasing_increasing_chunks.extend([False]*(largest_chunk_size - len(isIncreasing_increasing_chunks)))
+        isIncreasing_increasing_chunks.extend([False] * (largest_chunk_size - len(isIncreasing_increasing_chunks)))
     if len(isDecreasing_increasing_chunks) < largest_chunk_size:
-        isDecreasing_increasing_chunks.extend([False]*(largest_chunk_size - len(isDecreasing_increasing_chunks)))
+        isDecreasing_increasing_chunks.extend([False] * (largest_chunk_size - len(isDecreasing_increasing_chunks)))
     if len(isIncreasing_decreasing_chunks) < largest_chunk_size:
-        isIncreasing_decreasing_chunks.extend([False]*(largest_chunk_size - len(isIncreasing_decreasing_chunks)))
+        isIncreasing_decreasing_chunks.extend([False] * (largest_chunk_size - len(isIncreasing_decreasing_chunks)))
     if len(isDecreasing_decreasing_chunks) < largest_chunk_size:
-        isDecreasing_decreasing_chunks.extend([False]*(largest_chunk_size - len(isDecreasing_decreasing_chunks)))
-    
+        isDecreasing_decreasing_chunks.extend([False] * (largest_chunk_size - len(isDecreasing_decreasing_chunks)))
+
     # print("isIncreasing_increasing_chunks", isIncreasing_increasing_chunks)
     # print("isDecreasing_increasing_chunks", isDecreasing_increasing_chunks)
     # print("isIncreasing_decreasing_chunks", isIncreasing_decreasing_chunks)
     # print("isDecreasing_decreasing_chunks", isDecreasing_decreasing_chunks)
 
-    if len(isIncreasing_increasing_chunks) >= 1: 
-        resp = isIncreasing_decreasing_chunks[0] or isDecreasing_decreasing_chunks[0] or isIncreasing_increasing_chunks[0] or isDecreasing_increasing_chunks[0]        
-        for i,j,k,l in zip(isIncreasing_increasing_chunks, isDecreasing_increasing_chunks, isIncreasing_decreasing_chunks, isDecreasing_decreasing_chunks):
+    if len(isIncreasing_increasing_chunks) >= 1:
+        resp = (
+            isIncreasing_decreasing_chunks[0]
+            or isDecreasing_decreasing_chunks[0]
+            or isIncreasing_increasing_chunks[0]
+            or isDecreasing_increasing_chunks[0]
+        )
+        for i, j, k, l in zip(
+            isIncreasing_increasing_chunks, isDecreasing_increasing_chunks, isIncreasing_decreasing_chunks, isDecreasing_decreasing_chunks
+        ):
             resp = resp and (i or j or k or l)
         if resp:
             return True
 
     return False
 
+
 if __name__ == "__main__":
- 
     samp = r"""
     "A.1 , A.2 , A.3 , A.4, B.1 , B.2, B.3, C.1"
     """
