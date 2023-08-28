@@ -1,13 +1,37 @@
+import logging
 import os
+import sys
 from argparse import ArgumentParser
+from dataclasses import dataclass
 from datetime import datetime
-from collections import Counter
+from enum import Enum
+from typing import Any, Dict, List
 
 import pandas as pd
 from datasets import load_dataset
 
 from filters.base import PIPELINE_SINGLETON as PIPELINE
-from filters.highly_duplicated_filter import generate_sequence_histogram, get_highly_duplicated_filter_func
+
+FORMATTER = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S %z")
+
+STDOUT_HANDLER = logging.StreamHandler(sys.stdout)
+STDOUT_HANDLER.setLevel(logging.DEBUG)
+STDOUT_HANDLER.setFormatter(FORMATTER)
+
+LOGGER = logging.getLogger(__name__)
+LOGGER.setLevel(logging.DEBUG)
+LOGGER.addHandler(STDOUT_HANDLER)
+
+
+class Schema(Enum):
+    DEDUPLICATED = "deduped"
+    DUPLICATED = "duped"
+
+
+@dataclass
+class Dataset:
+    data: pd.DataFrame
+    schema: Schema
 
 
 def parse_cli_args():
@@ -35,7 +59,7 @@ def parse_cli_args():
         default=models_args_default,
     )
 
-    schemes_args_help = "The data scheme to get the perplexities for. Valid options are: deduped, duped"
+    schemes_args_help = "The data scheme used for Pythia model training. Valid options are: deduped, duped"
     schemes_args_default = ["deduped", "duped"]
     parser.add_argument(
         "--schemes",
@@ -66,7 +90,7 @@ def parse_cli_args():
     return parser.parse_args()
 
 
-def get_dataset(dataset_name: str, split_name: str, sample_size: int = None) -> pd.DataFrame:
+def get_dataset(dataset_name: str, split_name: str, sample_size: int = None) -> Dataset:
     """
     Get the dataset for the given dataset name and split name.
 
@@ -78,31 +102,116 @@ def get_dataset(dataset_name: str, split_name: str, sample_size: int = None) -> 
     Returns:
         pd.DataFrame: The dataset.
     """
-    required_columns = ["index", "tokens"]
-    dataset = None
+    required_columns = ["sequence_id", "tokens"]
+    schema_name, model_size = split_name.split(".")
+    schema = Schema.DEDUPLICATED if schema_name == "deduped" else Schema.DUPLICATED
 
     if dataset_name.split("-")[0] == "pile":
-        scheme = split_name.split(".")[0]
-        pile_path = f"EleutherAI/pile-{scheme}-pythia-random-sampled"
-        dataset = load_dataset(pile_path, split="train").to_pandas()[required_columns]
+        pile_path = f"EleutherAI/pile-{schema_name}-pythia-random-sampled"
+        dataset = load_dataset(pile_path, split="train").to_pandas()
+        # The original dataset has a different capitalization for the column names, so we'll rename them along
+        # with other columns for clarity and consistency.
+        dataset = dataset.rename(
+            columns={
+                "Index": "sequence_id",
+                "Tokens": "tokens",
+                "70M": "70m",
+                "160M": "160m",
+                "410M": "410m",
+                "1B": "1b",
+                "1.4B": "1.4b",
+                "2.8B": "2.8b",
+                "6.9B": "6.9b",
+                "12B": "12b",
+            }
+        )
+        # This dataset already contains the memorization score, we'll fetch it by the model parameter size.
+        required_columns.append(model_size)
+        # We'll also rename the memorization score column for consistency.
+        dataset = dataset[required_columns].rename(columns={model_size: "memorization_score"})
     else:
-        dataset = load_dataset("EleutherAI/pythia-memorized-evals")[split_name].to_pandas()[required_columns]
+        dataset = load_dataset("EleutherAI/pythia-memorized-evals")[split_name].to_pandas().rename(columns={"index": "sequence_id"})
+        dataset = dataset[required_columns]
+        # This dataset already indicates all sequences are memorized.
+        dataset["memorization_score"] = 1.0
 
-    return dataset if sample_size is None else dataset.sample(sample_size).reset_index(drop=True)
+    dataset = dataset if sample_size is None else dataset.sample(sample_size).reset_index(drop=True)
+
+    return Dataset(data=dataset, schema=schema)
 
 
-def register_args_based_filters(histogram: Counter[str, int]) -> None:
+def get_precomputed_signals(dataset: Dataset) -> Dict[str, Any]:
     """
-    Register argument-based filters, e.g. highly duplicated filters, to the pipeline singleton instance.
+    Get the precomputed signals for the given dataset.
 
     Args:
-        histogram (Counter[str, int]): The histogram of the dataset's tokens.
+        dataset (Dataset): The dataset to get the precomputed signals for.
     """
-    duplicated_filter_func = get_highly_duplicated_filter_func(histogram)
+    schema = dataset.schema.value
+    # (sequence_id, frequency)
+    sequence_duplicates = (
+        load_dataset(f"usvsnsp/{schema}-num-duplicates")["train"].to_pandas().rename(columns={"Index": "sequence_id", "Counts": "frequency"})
+    )
+    # (token_id, frequency)
+    memorized_frequencies = (
+        load_dataset(f"usvsnsp/{schema}-num-frequencies")["memorized"].to_pandas().rename(columns={"TokenID": "token_id", "Frequency": "frequency"})
+    )
+    # (token_id, frequency)
+    non_memorized_frequencies = (
+        load_dataset(f"usvsnsp/{schema}-num-frequencies")["non_memorized"]
+        .to_pandas()
+        .rename(columns={"TokenID": "token_id", "Frequency": "frequency"})
+    )
 
-    @PIPELINE.register_filter(output_column="is_duplicated")
-    def highly_duplicated_filter(row: pd.Series) -> bool:
-        return duplicated_filter_func(row)
+    signals = {
+        "sequence_duplicates": sequence_duplicates,
+        "memorized_frequencies": memorized_frequencies,
+        "non_memorized_frequencies": non_memorized_frequencies,
+    }
+
+    return signals
+
+
+def register_args_based_filters(signals: Dict[str, Any]) -> None:
+    """
+    Register signal-based filters, e.g. highly duplicated filters, to the pipeline singleton instance.
+
+    Args:
+        signals (Dict[str, Any]): The precomputed signals to use for the filters.
+    """
+    sequence_duplicates = signals["sequence_duplicates"]
+    memorized_frequencies = signals["memorized_frequencies"]
+    non_memorized_frequencies = signals["non_memorized_frequencies"]
+
+    @PIPELINE.register_filter(output_column="num_duplicates")
+    def num_sequence_duplicate_filter(row: pd.Series) -> int:
+        sequence_index = row["sequence_id"]
+
+        try:
+            num_duplicates = sequence_duplicates[sequence_duplicates["sequence_id"] == sequence_index].iloc[0]["frequency"]
+        except:
+            LOGGER.warning(f"Sequence index {sequence_index} not found in the sequence duplication dataset. Defaulting to -1.")
+            # If the sequence is not in the dataset, then we'll set
+            # the number of duplicates to -1 as an invalidation signal.
+            num_duplicates = -1
+
+        return num_duplicates
+
+    @PIPELINE.register_filter(output_column="memorized_token_frequencies")
+    def memorized_token_frequency_filter(row: pd.Series) -> List[int]:
+        tokens = row["tokens"]
+        token_frequencies = list(map(lambda _id: memorized_frequencies[memorized_frequencies["token_id"] == _id].iloc[0]["frequency"], tokens))
+
+        return token_frequencies
+
+    @PIPELINE.register_filter(output_column="non_memorized_token_frequencies")
+    def non_memorized_token_frequency_filter(row: pd.Series) -> List[int]:
+        tokens = row["tokens"]
+        token_frequencies = list(
+            map(lambda _id: non_memorized_frequencies[non_memorized_frequencies["token_id"] == _id].iloc[0]["frequency"], tokens)
+        )
+
+        return token_frequencies
 
 
 def run_pipeline(run_id: str, dataset_name: str, split_name: str, sample_size: int = None) -> None:
@@ -119,12 +228,10 @@ def run_pipeline(run_id: str, dataset_name: str, split_name: str, sample_size: i
         None
     """
     dataset = get_dataset(dataset_name, split_name, sample_size=sample_size)
-    tokens = dataset["tokens"]
-    token_histogram = generate_sequence_histogram(tokens)
+    signals = get_precomputed_signals(dataset)
+    register_args_based_filters(signals)
 
-    register_args_based_filters(token_histogram)
-    transformed_dataset = PIPELINE.transform(dataset)
-
+    transformed_dataset = PIPELINE.transform(dataset.data)
     file_name = split_name.replace(".", "_")
     transformed_dataset.to_csv(f"datasets/{run_id}/{dataset_name}_{file_name}.csv", index=False)
 
@@ -134,23 +241,28 @@ def main():
     The main function of the script.
     """
     args = parse_cli_args()
-    os.makedirs(f"./datasets/{args.run_id}", exist_ok=True)
 
-    print("---------------------------------------------------------------------------")
-    print("Starting metric calculation run with the following parameters:")
-    print(f"Run ID: {args.run_id}")
-    print(f"Models: {args.models}")
-    print(f"Schemes: {args.schemes}")
-    print(f"Datasets: {args.datasets}")
+    os.makedirs(f"./datasets/{args.run_id}", exist_ok=True)
+    file_handler = logging.FileHandler(f"./datasets/{args.run_id}/run.log")
+    file_handler.setLevel(logging.DEBUG)
+    file_handler.setFormatter(FORMATTER)
+    LOGGER.addHandler(file_handler)
+
+    LOGGER.info("---------------------------------------------------------------------------")
+    LOGGER.info("Starting metric calculation run with the following parameters:")
+    LOGGER.info(f"Run ID: {args.run_id}")
+    LOGGER.info(f"Models: {args.models}")
+    LOGGER.info(f"Schemes: {args.schemes}")
+    LOGGER.info(f"Datasets: {args.datasets}")
     if args.sample_size is not None:
-        print(f"Sample size: {args.sample_size}")
-    print("---------------------------------------------------------------------------")
+        LOGGER.info(f"Sample size: {args.sample_size}")
+    LOGGER.info("---------------------------------------------------------------------------")
 
     for model_size in args.models if isinstance(args.models, list) else args.models.split(","):
         for data_scheme in args.schemes if isinstance(args.schemes, list) else args.schemes.split(","):
             for dataset_name in args.datasets if isinstance(args.datasets, list) else args.datasets.split(","):
                 split_name = f"{data_scheme}.{model_size}"
-                print(f"Calculating metrics for {split_name} on dataset {dataset_name}...")
+                LOGGER.info(f"Calculating metrics for {split_name} on dataset {dataset_name}...")
                 run_pipeline(args.run_id, dataset_name, split_name, args.sample_size)
 
 
