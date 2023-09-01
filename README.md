@@ -29,4 +29,8 @@ We’re currently analyzing the data memorized by the Pythia models as a part of
 
 Having a basic grasp of the existing literature and problem area will be helpful for contributing to this project. You don’t need a super deep understand and there are opportunities for contributing across different levels of experience. **Please add any more papers/articles that you think are relevant as well as leave comments on existing articles.**
 
-
+## Setup
+```
+# Install JDK for PySpark
+sudo apt-get install openjdk-11-jdk
+```
