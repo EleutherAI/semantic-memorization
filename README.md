@@ -36,4 +36,4 @@ Having a basic grasp of the existing literature and problem area will be helpful
 
 ## Running metric pipeline
 1. Run `python calculate_metrics.py`
-2. To monitor the status of Spark jobs, port forward `4040` and go to `http://localhost:4040/jobs/`
+2. To monitor the status of Spark jobs, go to `http://localhost:4040/jobs/`; Don't forget to port-forward `4040` if necessary
