@@ -213,7 +213,7 @@ def run_pipeline(
 
     transformed_dataset = PIPELINE.transform(dataset)
     file_name = split_name.replace(".", "_", 1)
-    transformed_dataset.write.parquet(f"datasets/{run_id}/{dataset_name}_{file_name}")
+    transformed_dataset.coalesce(1).write.parquet(f"datasets/{run_id}/{dataset_name}_{file_name}")
 
 
 def main():
