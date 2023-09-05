@@ -7,6 +7,18 @@ from .constants import PrecomputedFeatureName
 
 @PIPELINE_SINGLETON.register_filter()
 def token_frequency_filter(dataset: DataFrame, features: PrecomputedFeatures) -> DataFrame:
+    """Returns maximum, minimum and average token frequencies
+
+    Returns token frequencies of a sequence in the given dataframe
+
+    Args:
+        dataset (DataFrame): Dataset containing sequences of tokens
+    
+    Returns:
+        DataFrame: Dataframe with additional columns of `max_frequency`, `min_frequency` and 
+            `avg_frequency`; maximum, minimum and average counts of occurance of tokens of that
+            sequence in Pile corpus
+    """
     main = dataset.alias("main")
     memorized_frequencies = features[PrecomputedFeatureName.MEMORIZED_TOKEN_FREQUENCIES].alias("memorized")
     non_memorized_frequencies = features[PrecomputedFeatureName.NON_MEMORIZED_TOKEN_FREQUENCIES].alias("non_memorized")

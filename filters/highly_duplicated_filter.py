@@ -6,6 +6,18 @@ from .constants import PrecomputedFeatureName
 
 @PIPELINE_SINGLETON.register_filter()
 def sequence_duplicates_filter(dataset: DataFrame, features: PrecomputedFeatures) -> DataFrame:
+    """Returns maximum, minimum and average token frequencies
+
+    Returns duplicates of a sequence in the given dataframe
+
+    Args:
+        dataset (DataFrame): Dataset containing sequences of tokens
+        features (PrecomputedFeatures): 
+    
+    Returns:
+        DataFrame: Dataframe with additional columns of `sequence_duplicates`, number of times that
+            64-gram sequence occurs in Pile corpus
+    """
     main = dataset.alias("main")
     sequence_frequencies = features[PrecomputedFeatureName.SEQUENCE_FREQUENCIES].alias("sequence_frequencies")
 
