@@ -25,5 +25,4 @@ jobs:
         flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics --exclude working_dirs
     - name: Test cpu-only metrics
       run: |
-        ls
-        python compute_metrics.py --models 70m --schemes duped --datasets memories --sample_size 100
+        python calculate_metrics.py --models 70m --schemes duped --datasets memories --sample_size 100
