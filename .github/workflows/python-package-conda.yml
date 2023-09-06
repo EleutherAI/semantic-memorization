@@ -1,4 +1,4 @@
-name: Python Package using Conda
+name: Test on small dataset
 
 on: [workflow_dispatch]
 
@@ -20,7 +20,7 @@ jobs:
         echo $CONDA/bin >> $GITHUB_PATH
     - name: Install dependencies
       run: |
-        conda env update --file requirements.txt --name base
+        pip3 install -r requirements.txt
     - name: Lint with flake8
       run: |
         conda install flake8
