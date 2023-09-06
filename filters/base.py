@@ -1,33 +1,51 @@
-import os
-from typing import Any, Callable, List, Tuple, TypeVar
+import logging
+from typing import Any, Callable, Dict, List, TypeAlias
 
-import pandas as pd
-from pandarallel import pandarallel
+from pyspark.sql import DataFrame, SparkSession
 
-FilterFunc = TypeVar("FilterFunc", bound=Callable[..., Any])
-pandarallel.initialize(progress_bar=True, nb_workers=os.cpu_count())
+from filters.constants import PrecomputedFeatureName
+from utils import initialize_logger
+from spark.constants import NUM_PARTITIONS, SPARK_CACHE_DIR
+
+FilterFunc: TypeAlias = Callable[..., Any]
+PrecomputedFeatures: TypeAlias = Dict[PrecomputedFeatureName, DataFrame]
+
+LOGGER: logging.Logger = initialize_logger()
 
 
 class MetricFilterPipeline:
     def __init__(self):
-        self.filters: List[Tuple[FilterFunc, str]] = []
+        self.filters: List[FilterFunc] = []
+        self.features: PrecomputedFeatures = {}
+        self.spark: SparkSession
 
-    def register_filter(self, output_column: str) -> FilterFunc:
+    def register_filter(self) -> FilterFunc:
         def decorator(filter_func: FilterFunc) -> FilterFunc:
             def wrapper(*args, **kwargs) -> Any:
                 return filter_func(*args, **kwargs)
 
-            self.filters.append((filter_func, output_column))
+            LOGGER.info(f"Registering filter {filter_func.__name__}...")
+            self.filters.append(filter_func)
 
             return wrapper
 
         return decorator
 
-    def transform(self, dataframe: pd.DataFrame) -> pd.DataFrame:
-        for filter_func, output_column in self.filters:
-            dataframe[output_column] = dataframe.parallel_apply(filter_func, axis=1)
+    def register_features(self, features: PrecomputedFeatures) -> None:
+        LOGGER.info(f"Registering features {features.keys()}...")
+        self.features.update(features)
 
-        return dataframe
+    def register_spark_session(self, spark: SparkSession) -> None:
+        self.spark = spark
+
+    def transform(self, original: DataFrame) -> DataFrame:
+        current_dataset = original
+
+        for filter_func in self.filters:
+            # Checkpointing each filter to side-step potential OOM issues
+            current_dataset: DataFrame = filter_func(current_dataset, self.features).checkpoint()
+
+        return current_dataset
 
 
 PIPELINE_SINGLETON = MetricFilterPipeline()

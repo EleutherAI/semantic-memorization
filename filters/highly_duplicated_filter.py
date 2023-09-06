@@ -1,69 +1,29 @@
-import os
+from pyspark.sql import DataFrame
+from pyspark.sql import functions as F
 
-from collections import Counter
-from typing import Callable, List
-
-import pandas as pd
-from pandarallel import pandarallel
-
-pandarallel.initialize(progress_bar=True, nb_workers=os.cpu_count())
+from .base import PIPELINE_SINGLETON, PrecomputedFeatures
+from .constants import PrecomputedFeatureName
 
 
-def _concat_token_indices(token_indices: List[int], delimiter: str = "_") -> str:
-    """
-    Concatenates a list of tokens into a single string.
+@PIPELINE_SINGLETON.register_filter()
+def sequence_duplicates_filter(dataset: DataFrame, features: PrecomputedFeatures) -> DataFrame:
+    """Compute the number of duplicates (frequency) of a sequence.
 
     Args:
-        token_indices (List[int]): List of token indices to concatenate.
-        delimiter (str, optional): Delimiter to use for concatenation. Defaults to '_'.
+        dataset (DataFrame): Dataset containing sequences of tokens
+        features (PrecomputedFeatures):
 
     Returns:
-        str: Concatenated string of tokens indices.
+        DataFrame: Dataframe with additional columns of `sequence_duplicates`, number of times that
+            64-gram sequence occurs in Pile corpus
     """
-    return delimiter.join(map(str, token_indices))
+    main = dataset.alias("main")
+    sequence_frequencies = features[PrecomputedFeatureName.SEQUENCE_FREQUENCIES].alias("sequence_frequencies")
 
+    # Join on `sequence_id` to extract the sequence frequency
+    final = main.join(sequence_frequencies, on="sequence_id", how="inner").select(
+        "main.*",
+        F.col("sequence_frequencies.frequency").alias("sequence_duplicates"),
+    )
 
-def generate_sequence_histogram(token_indices: pd.Series, delimiter: str = "_") -> Counter[str, int]:
-    """
-    Generates a histogram from a Pandas Series of token indices. The histogram is based on the concatenated strings of token indices.
-
-    Args:
-        token_index_sequences (pd.Series): Pandas Series of token indices.
-        delimiter (str, optional): Delimiter to use for concatenation. Defaults to '_'.
-
-    Returns:
-        Counter[str, int]: Histogram of strings of token indices.
-    """
-    return Counter(token_indices.parallel_apply(lambda x: _concat_token_indices(x, delimiter=delimiter)))
-
-
-def get_highly_duplicated_filter_func(
-    histogram: Counter[str, int], frequency_threshold: int = 1, delimiter: str = "_"
-) -> Callable[[pd.Series], bool]:
-    """
-    Generates a filter function that checks if a list of token indices is highly duplicated.
-
-    Args:
-        histogram (Counter[str, int]): Histogram of strings of token indices.
-        frequency_threshold (int, optional): Frequency threshold to use for filtering. Defaults to 1.
-        delimiter (str, optional): Delimiter to use for concatenation. Defaults to '_'.
-
-    Returns:
-        Callable[[pd.Series], bool]: Filter function that checks if a list of token indices is highly duplicated.
-    """
-
-    def _highly_duplicated_filter_func(row: pd.Series) -> bool:
-        """
-        Checks if a list of token indices is highly duplicated.
-
-        Args:
-            row (pd.Series): Pandas Series containing a list of token indices.
-
-        Returns:
-            bool: True if the list of token indices is highly duplicated, False otherwise.
-        """
-        token_indices = row["tokens"]
-        token_string = _concat_token_indices(token_indices, delimiter=delimiter)
-        return histogram[token_string] > frequency_threshold
-
-    return _highly_duplicated_filter_func
+    return final

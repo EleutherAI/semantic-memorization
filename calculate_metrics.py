@@ -1,13 +1,21 @@
+import logging
 import os
 from argparse import ArgumentParser
 from datetime import datetime
-from collections import Counter
+from typing import Dict, Optional
 
-import pandas as pd
-from datasets import load_dataset
+from datasets import load_dataset as hf_load_dataset
+from pyspark.sql import SparkSession, DataFrame
 
-from filters.base import PIPELINE_SINGLETON as PIPELINE
-from filters.highly_duplicated_filter import generate_sequence_histogram, get_highly_duplicated_filter_func
+from utils import initialize_logger, initialize_formatter
+from filters import PIPELINE
+from filters.constants import PrecomputedFeatureName
+from spark.constants import NUM_PARTITIONS, SPARK_CACHE_DIR
+from spark.utils import initialize_spark
+
+LOGGER: logging.Logger = initialize_logger()
+SPARK: SparkSession = initialize_spark()
+PIPELINE.register_spark_session(SPARK)
 
 
 def parse_cli_args():
@@ -35,7 +43,7 @@ def parse_cli_args():
         default=models_args_default,
     )
 
-    schemes_args_help = "The data scheme to get the perplexities for. Valid options are: deduped, duped"
+    schemes_args_help = "The data scheme used for Pythia model training. Valid options are: deduped, duped"
     schemes_args_default = ["deduped", "duped"]
     parser.add_argument(
         "--schemes",
@@ -63,70 +71,149 @@ def parse_cli_args():
         default=None,
     )
 
+    sample_seed_args_help = "The seed to use for sampling the dataset. Defaults to None."
+    parser.add_argument(
+        "--sample_seed",
+        type=int,
+        help=sample_seed_args_help,
+        default=None,
+    )
+
     return parser.parse_args()
 
 
-def get_dataset(dataset_name: str, split_name: str, sample_size: int = None) -> pd.DataFrame:
+def load_dataset(dataset_name: str, scheme: str, model_size: str) -> DataFrame:
     """
-    Get the dataset for the given dataset name and split name.
+    Load the dataset from HuggingFace datasets. If the dataset is not locally available, then
+    download it from HuggingFace datasets and cache it as a Spark DataFrame in Parquet format.
 
     Args:
-        dataset_name (str): The name of the dataset to get.
-        split_name (str): The name of the split to get.
-        sample_size (int, optional): The number of samples to take from the dataset. Defaults to None.
+        dataset_name (str): Name of the dataset to download.
+        scheme (str): Data scheme used for Pythia model training.
+        model_size (str): Pythia model size.
 
     Returns:
-        pd.DataFrame: The dataset.
+        DataFrame: Spark DataFrame containing the dataset.
     """
-    required_columns = ["index", "tokens"]
-    dataset = None
+    split_name = f"{scheme}.{model_size}"
+    required_columns = ["sequence_id", "tokens"]
+    is_pile = dataset_name.split("-")[0] == "pile"
 
-    if dataset_name.split("-")[0] == "pile":
-        scheme = split_name.split(".")[0]
-        pile_path = f"EleutherAI/pile-{scheme}-pythia-random-sampled"
-        dataset = load_dataset(pile_path, split="train").to_pandas()[required_columns]
+    if is_pile:
+        hf_dataset_name = f"EleutherAI/pile-{scheme}-pythia-random-sampled"
     else:
-        dataset = load_dataset("EleutherAI/pythia-memorized-evals")[split_name].to_pandas()[required_columns]
+        hf_dataset_name = f"EleutherAI/pythia-memorized-evals"
 
-    return dataset if sample_size is None else dataset.sample(sample_size).reset_index(drop=True)
+    cache_name = hf_dataset_name if is_pile else f"{hf_dataset_name}-{split_name}"
+    cache_path = f"{SPARK_CACHE_DIR}/{cache_name}"
+
+    if os.path.isdir(cache_path):
+        LOGGER.info(f"Dataset {hf_dataset_name} already exists, skipping the download.")
+        return SPARK.read.parquet(cache_path)
+
+    LOGGER.info(f"Downloading dataset {hf_dataset_name}...")
+    if is_pile:
+        # The original dataset has a different capitalization for the column names, so we'll rename them along
+        # with other columns for clarity and consistency.
+        dataset = (
+            hf_load_dataset(hf_dataset_name, split="train")
+            .to_pandas()
+            .rename(
+                columns={
+                    "Index": "sequence_id",
+                    "Tokens": "tokens",
+                    "70M": "70m",
+                    "160M": "160m",
+                    "410M": "410m",
+                    "1B": "1b",
+                    "1.4B": "1.4b",
+                    "2.8B": "2.8b",
+                    "6.9B": "6.9b",
+                    "12B": "12b",
+                }
+            )
+        )
+        dataset.tokens = dataset.tokens.map(lambda x: x.tolist())
+        # This dataset already contains the memorization score, we'll fetch it by the model parameter size.
+        required_columns.append(model_size)
+        # We'll also rename the memorization score column for consistency.
+        dataset = dataset[required_columns].rename(columns={model_size: "memorization_score"})
+    else:
+        dataset = hf_load_dataset(hf_dataset_name, split=split_name).to_pandas().rename(columns={"index": "sequence_id"})
+        dataset.tokens = dataset.tokens.map(lambda x: x.tolist())
+        dataset = dataset[required_columns]
+        # This dataset already indicates all sequences are memorized.
+        dataset["memorization_score"] = 1.0
+
+    LOGGER.info(f"Converting and caching the dataset {hf_dataset_name} as Spark DataFrame in {cache_path}...")
+    # Convert the Pandas DataFrame dataset to Spark DataFrame in Parquet
+    SPARK.createDataFrame(dataset).repartition(NUM_PARTITIONS).write.parquet(cache_path)
+
+    return SPARK.read.parquet(cache_path)
 
 
-def register_args_based_filters(histogram: Counter[str, int]) -> None:
+def load_precomputed_features(schema: str) -> Dict[PrecomputedFeatureName, DataFrame]:
     """
-    Register argument-based filters, e.g. highly duplicated filters, to the pipeline singleton instance.
+    Load the pre-computed features from HuggingFace datasets. If the features are not locally available, then
+    download them from HuggingFace datasets and cache them as Spark DataFrames in Parquet format.
 
     Args:
-        histogram (Counter[str, int]): The histogram of the dataset's tokens.
-    """
-    duplicated_filter_func = get_highly_duplicated_filter_func(histogram)
-
-    @PIPELINE.register_filter(output_column="is_duplicated")
-    def highly_duplicated_filter(row: pd.Series) -> bool:
-        return duplicated_filter_func(row)
-
-
-def run_pipeline(run_id: str, dataset_name: str, split_name: str, sample_size: int = None) -> None:
-    """
-    Run the pipeline on the given dataset and split.
-
-    Args:
-        run_id (str): The ID of the run.
-        dataset_name (str): The name of the dataset to get.
-        split_name (str): The name of the split to get.
-        sample_size (int, optional): The number of samples to take from the dataset. Defaults to None.
+        schema (str): Data scheme used for Pythia model training.
 
     Returns:
-        None
+        Dict[PrecomputedFeatureName, DataFrame]: Dictionary of pre-computed features.
     """
-    dataset = get_dataset(dataset_name, split_name, sample_size=sample_size)
-    tokens = dataset["tokens"]
-    token_histogram = generate_sequence_histogram(tokens)
+    features = {}
+    hf_dataset_names = [
+        (PrecomputedFeatureName.SEQUENCE_FREQUENCIES, f"usvsnsp/{schema}-num-duplicates", "train", {"Index": "sequence_id", "Counts": "frequency"}),
+        (
+            PrecomputedFeatureName.MEMORIZED_TOKEN_FREQUENCIES,
+            f"usvsnsp/{schema}-num-frequencies",
+            "memorized",
+            {"TokenID": "token_id", "Frequency": "frequency"},
+        ),
+        (
+            PrecomputedFeatureName.NON_MEMORIZED_TOKEN_FREQUENCIES,
+            f"usvsnsp/{schema}-num-frequencies",
+            "non_memorized",
+            {"TokenID": "token_id", "Frequency": "frequency"},
+        ),
+    ]
 
-    register_args_based_filters(token_histogram)
+    for enum, name, split, column_mapping in hf_dataset_names:
+        cache_path = f"{SPARK_CACHE_DIR}/{name}-{split}"
+
+        if os.path.isdir(cache_path):
+            LOGGER.info(f"Dataset {name}-{split} already exists, skipping the download.")
+            features[enum] = SPARK.read.parquet(cache_path)
+            continue
+
+        LOGGER.info(f"Downloading dataset {name}-{split}...")
+        dataset = hf_load_dataset(name, split=split).to_pandas().rename(columns=column_mapping)
+
+        LOGGER.info(f"Converting and caching the dataset {name}-{split} as Spark DataFrame {cache_path}...")
+        # Convert the Pandas DataFrame dataset to Spark DataFrame in Parquet
+        SPARK.createDataFrame(dataset).repartition(NUM_PARTITIONS).write.parquet(cache_path)
+
+        features[enum] = SPARK.read.parquet(cache_path).cache()
+
+    return features
+
+
+def run_pipeline(
+    dataset: DataFrame,
+    dataset_name: str,
+    split_name: str,
+    run_id: str,
+    sample_size: Optional[int] = None,
+    sample_seed: Optional[int] = None,
+) -> None:
+    if sample_size is not None:
+        dataset = dataset.sample(1.0, seed=sample_seed).limit(sample_size)
+
     transformed_dataset = PIPELINE.transform(dataset)
-
-    file_name = split_name.replace(".", "_")
-    transformed_dataset.to_csv(f"datasets/{run_id}/{dataset_name}_{file_name}.csv", index=False)
+    file_name = split_name.replace(".", "_", 1)
+    transformed_dataset.coalesce(1).write.parquet(f"datasets/{run_id}/{dataset_name}_{file_name}")
 
 
 def main():
@@ -134,24 +221,40 @@ def main():
     The main function of the script.
     """
     args = parse_cli_args()
+
     os.makedirs(f"./datasets/{args.run_id}", exist_ok=True)
+    file_handler = logging.FileHandler(f"./datasets/{args.run_id}/run.log")
+    file_handler.setLevel(logging.DEBUG)
+    file_handler.setFormatter(initialize_formatter())
+    LOGGER.addHandler(file_handler)
 
-    print("---------------------------------------------------------------------------")
-    print("Starting metric calculation run with the following parameters:")
-    print(f"Run ID: {args.run_id}")
-    print(f"Models: {args.models}")
-    print(f"Schemes: {args.schemes}")
-    print(f"Datasets: {args.datasets}")
+    LOGGER.info("---------------------------------------------------------------------------")
+    LOGGER.info("Starting metric calculation run with the following parameters:")
+    LOGGER.info(f"Run ID: {args.run_id}")
+    LOGGER.info(f"Models: {args.models}")
+    LOGGER.info(f"Schemes: {args.schemes}")
+    LOGGER.info(f"Datasets: {args.datasets}")
     if args.sample_size is not None:
-        print(f"Sample size: {args.sample_size}")
-    print("---------------------------------------------------------------------------")
+        LOGGER.info(f"Sample size: {args.sample_size}")
+    if args.sample_seed is not None:
+        LOGGER.info(f"Sample seed: {args.sample_seed}")
+    LOGGER.info("---------------------------------------------------------------------------")
 
-    for model_size in args.models if isinstance(args.models, list) else args.models.split(","):
-        for data_scheme in args.schemes if isinstance(args.schemes, list) else args.schemes.split(","):
+    for data_scheme in args.schemes if isinstance(args.schemes, list) else args.schemes.split(","):
+        LOGGER.info("Loading pre-computed features...")
+        precomputed_features = load_precomputed_features(data_scheme)
+        PIPELINE.register_features(precomputed_features)
+
+        for model_size in args.models if isinstance(args.models, list) else args.models.split(","):
             for dataset_name in args.datasets if isinstance(args.datasets, list) else args.datasets.split(","):
                 split_name = f"{data_scheme}.{model_size}"
-                print(f"Calculating metrics for {split_name} on dataset {dataset_name}...")
-                run_pipeline(args.run_id, dataset_name, split_name, args.sample_size)
+                LOGGER.info(f"Loading dataset {dataset_name} and split {split_name}...")
+                dataset = load_dataset(dataset_name, data_scheme, model_size)
+                LOGGER.info(f"Calculating metrics for {split_name} on dataset {dataset_name}...")
+                run_pipeline(dataset, dataset_name, split_name, args.run_id, args.sample_size, args.sample_seed)
+
+        # Reset before caching the next set of pre-computed features
+        SPARK.catalog.clearCache()
 
 
 if __name__ == "__main__":

@@ -29,4 +29,11 @@ We’re currently analyzing the data memorized by the Pythia models as a part of
 
 Having a basic grasp of the existing literature and problem area will be helpful for contributing to this project. You don’t need a super deep understand and there are opportunities for contributing across different levels of experience. **Please add any more papers/articles that you think are relevant as well as leave comments on existing articles.**
 
+## Development Setup
+1. Setup your Python (3.11.4) environment via [Conda](https://docs.conda.io/projects/miniconda/en/latest/)
+2. Run `apt-get install -y openjdk-11-jdk` to install JDK for PySpark if you're on Ubuntu, otherwise feel free to use the appropriate package manager
+3. Install Python packages via `pip install -r requirements.txt`
 
+## Running metric pipeline
+1. Run `python calculate_metrics.py`
+2. To monitor the status of Spark jobs, go to `http://localhost:4040/jobs/`; Don't forget to port-forward `4040` if necessary
