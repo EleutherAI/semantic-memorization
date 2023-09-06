@@ -2,27 +2,28 @@ from pyspark.sql import DataFrame
 from pyspark.sql import functions as F
 from pyspark.sql import types as T
 
-from .base import PIPELINE_SINGLETON, PrecomputedFeatures
-from .constants import PrecomputedFeatureName
+from .base import PIPELINE_SINGLETON
 
 from transformers import AutoTokenizer
 
+
 @PIPELINE_SINGLETON.register_filter()
-def detokenize(dataset: DataFrame, features: PrecomputedFeatures) -> DataFrame:
-    """Detokenizes tokens into text as a preprocessing step. 
+def detokenize(dataset: DataFrame, _) -> DataFrame:
+    """Detokenizes tokens into text as a preprocessing step.
 
     Args:
         dataset (DataFrame): Dataset containing sequences of tokens
-    
+        _ (PrecomputedFeatures): Unused
+
     Returns:
-        DataFrame: with additional `text` column
+        DataFrame: with additional column of `text`, detokenized text
     """
     main = dataset.alias("main")
 
-    tokenizer = AutoTokenizer.from_pretrained("EleutherAI/pythia-70m")
-    tokenizeUDF = F.udf(lambda seq:tokenizer.decode(seq), T.StringType())
+    tokenizer_name = "EleutherAI/pythia-70m"
+    tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
+    tokenizeUDF = F.udf(lambda seq: tokenizer.decode(seq), T.StringType())
 
-    main = main.withColumn("text", tokenizeUDF("tokens"))
+    final = main.withColumn("text", tokenizeUDF("tokens"))
 
-    return main
-    
+    return final
