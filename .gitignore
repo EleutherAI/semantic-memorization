@@ -443,3 +443,6 @@ aflah/data/pythia-1b.pkl_with_chunk_and_k
 
 # Spark caching
 spark_cache/
+
+# datasets
+datasets/
