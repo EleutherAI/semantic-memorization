@@ -4,7 +4,7 @@ from argparse import ArgumentParser
 from datetime import datetime
 from typing import Dict, Optional
 
-from datasets import load_dataset as hf_load_dataset
+from datasets import load_dataset as hf_load_dataset2
 from pyspark.sql import SparkSession, DataFrame
 
 from utils import initialize_logger, initialize_formatter
@@ -54,12 +54,12 @@ def parse_cli_args():
     )
 
     dataset_args_help = "The dataset in which to get inference responses for. Valid options are: memories, pile."
-    datasets_args_default = ["pile", "memories"]
+    datasets_args_default = ["pile", "memories", "test"]
     parser.add_argument(
         "--datasets",
         type=str,
         help=dataset_args_help,
-        choices=datasets_args_default + ["test"],
+        choices=datasets_args_default,
         default=datasets_args_default,
     )
 
@@ -107,7 +107,7 @@ def load_dataset(dataset_name: str, scheme: str, model_size: str) -> DataFrame:
     else:
         hf_dataset_name = f"EleutherAI/pythia-memorized-evals"
 
-    cache_name = hf_dataset_name if is_pile else f"{hf_dataset_name}-{split_name}"
+    cache_name = hf_dataset_name if is_pile or is_test else f"{hf_dataset_name}-{split_name}"
     cache_path = f"{SPARK_CACHE_DIR}/{cache_name}"
 
     if os.path.isdir(cache_path):
@@ -197,6 +197,9 @@ def load_precomputed_features(schema: str, is_test = False) -> Dict[PrecomputedF
     for enum, name, split, column_mapping in hf_dataset_names:
         cache_path = f"{SPARK_CACHE_DIR}/{name}-{split}"
 
+        if is_test:
+            cache_path = cache_path + "-test"
+
         if os.path.isdir(cache_path):
             LOGGER.info(f"Dataset {name}-{split} already exists, skipping the download.")
             features[enum] = SPARK.read.parquet(cache_path)
@@ -255,14 +258,16 @@ def main():
     if args.sample_seed is not None:
         LOGGER.info(f"Sample seed: {args.sample_seed}")
     LOGGER.info("---------------------------------------------------------------------------")
+    
+    
+    for model_size in args.models if isinstance(args.models, list) else args.models.split(","):
+        for dataset_name in args.datasets if isinstance(args.datasets, list) else args.datasets.split(","):
+            is_test = dataset_name == "test"
+            for data_scheme in args.schemes if isinstance(args.schemes, list) else args.schemes.split(","):
+                LOGGER.info("Loading pre-computed features...")
+                precomputed_features = load_precomputed_features(data_scheme, is_test = is_test)
+                PIPELINE.register_features(precomputed_features)
 
-    for data_scheme in args.schemes if isinstance(args.schemes, list) else args.schemes.split(","):
-        LOGGER.info("Loading pre-computed features...")
-        precomputed_features = load_precomputed_features(data_scheme, is_test = str(args.datasets) == "test")
-        PIPELINE.register_features(precomputed_features)
-
-        for model_size in args.models if isinstance(args.models, list) else args.models.split(","):
-            for dataset_name in args.datasets if isinstance(args.datasets, list) else args.datasets.split(","):
                 split_name = f"{data_scheme}.{model_size}"
                 LOGGER.info(f"Loading dataset {dataset_name} and split {split_name}...")
                 dataset = load_dataset(dataset_name, data_scheme, model_size)
