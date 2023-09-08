@@ -4,7 +4,7 @@ from argparse import ArgumentParser
 from datetime import datetime
 from typing import Dict, Optional
 
-from datasets import load_dataset as hf_load_dataset
+from datasets import load_dataset as hf_load_dataset2
 from pyspark.sql import SparkSession, DataFrame
 
 from utils import initialize_logger, initialize_formatter
@@ -54,7 +54,7 @@ def parse_cli_args():
     )
 
     dataset_args_help = "The dataset in which to get inference responses for. Valid options are: memories, pile."
-    datasets_args_default = ["pile", "memories"]
+    datasets_args_default = ["pile", "memories", "test"]
     parser.add_argument(
         "--datasets",
         type=str,
@@ -98,13 +98,16 @@ def load_dataset(dataset_name: str, scheme: str, model_size: str) -> DataFrame:
     split_name = f"{scheme}.{model_size}"
     required_columns = ["sequence_id", "tokens"]
     is_pile = dataset_name.split("-")[0] == "pile"
+    is_test = dataset_name.split("-")[0] == "test"
 
-    if is_pile:
+    if is_pile and not is_test:
         hf_dataset_name = f"EleutherAI/pile-{scheme}-pythia-random-sampled"
+    elif is_test:
+        hf_dataset_name = f"usvsnsp/pile-test-sampled"
     else:
         hf_dataset_name = f"EleutherAI/pythia-memorized-evals"
 
-    cache_name = hf_dataset_name if is_pile else f"{hf_dataset_name}-{split_name}"
+    cache_name = hf_dataset_name if is_pile or is_test else f"{hf_dataset_name}-{split_name}"
     cache_path = f"{SPARK_CACHE_DIR}/{cache_name}"
 
     if os.path.isdir(cache_path):
@@ -138,6 +141,12 @@ def load_dataset(dataset_name: str, scheme: str, model_size: str) -> DataFrame:
         required_columns.append(model_size)
         # We'll also rename the memorization score column for consistency.
         dataset = dataset[required_columns].rename(columns={model_size: "memorization_score"})
+    elif is_test:
+        dataset = (
+            hf_load_dataset(hf_dataset_name, split="train")
+            .to_pandas()
+        )
+        dataset.tokens = dataset.tokens.map(lambda x: x.tolist())
     else:
         dataset = hf_load_dataset(hf_dataset_name, split=split_name).to_pandas().rename(columns={"index": "sequence_id"})
         dataset.tokens = dataset.tokens.map(lambda x: x.tolist())
@@ -152,20 +161,25 @@ def load_dataset(dataset_name: str, scheme: str, model_size: str) -> DataFrame:
     return SPARK.read.parquet(cache_path)
 
 
-def load_precomputed_features(schema: str) -> Dict[PrecomputedFeatureName, DataFrame]:
+def load_precomputed_features(schema: str, is_test = False) -> Dict[PrecomputedFeatureName, DataFrame]:
     """
     Load the pre-computed features from HuggingFace datasets. If the features are not locally available, then
     download them from HuggingFace datasets and cache them as Spark DataFrames in Parquet format.
 
     Args:
         schema (str): Data scheme used for Pythia model training.
+        is_test (bool): Load a sampled versions if required in case of testing
 
     Returns:
         Dict[PrecomputedFeatureName, DataFrame]: Dictionary of pre-computed features.
     """
     features = {}
     hf_dataset_names = [
-        (PrecomputedFeatureName.SEQUENCE_FREQUENCIES, f"usvsnsp/{schema}-num-duplicates", "train", {"Index": "sequence_id", "Counts": "frequency"}),
+        (
+            PrecomputedFeatureName.SEQUENCE_FREQUENCIES, 
+            f"usvsnsp/{schema}-num-duplicates", 
+            "train", 
+            {"Index": "sequence_id", "Counts": "frequency"}),
         (
             PrecomputedFeatureName.MEMORIZED_TOKEN_FREQUENCIES,
             f"usvsnsp/{schema}-num-frequencies",
@@ -183,12 +197,17 @@ def load_precomputed_features(schema: str) -> Dict[PrecomputedFeatureName, DataF
     for enum, name, split, column_mapping in hf_dataset_names:
         cache_path = f"{SPARK_CACHE_DIR}/{name}-{split}"
 
+        if is_test:
+            cache_path = cache_path + "-test"
+
         if os.path.isdir(cache_path):
             LOGGER.info(f"Dataset {name}-{split} already exists, skipping the download.")
             features[enum] = SPARK.read.parquet(cache_path)
             continue
 
         LOGGER.info(f"Downloading dataset {name}-{split}...")
+        if is_test:
+            split = split + "[:3000]"
         dataset = hf_load_dataset(name, split=split).to_pandas().rename(columns=column_mapping)
 
         LOGGER.info(f"Converting and caching the dataset {name}-{split} as Spark DataFrame {cache_path}...")
@@ -239,14 +258,16 @@ def main():
     if args.sample_seed is not None:
         LOGGER.info(f"Sample seed: {args.sample_seed}")
     LOGGER.info("---------------------------------------------------------------------------")
+    
+    
+    for model_size in args.models if isinstance(args.models, list) else args.models.split(","):
+        for dataset_name in args.datasets if isinstance(args.datasets, list) else args.datasets.split(","):
+            is_test = dataset_name == "test"
+            for data_scheme in args.schemes if isinstance(args.schemes, list) else args.schemes.split(","):
+                LOGGER.info("Loading pre-computed features...")
+                precomputed_features = load_precomputed_features(data_scheme, is_test = is_test)
+                PIPELINE.register_features(precomputed_features)
 
-    for data_scheme in args.schemes if isinstance(args.schemes, list) else args.schemes.split(","):
-        LOGGER.info("Loading pre-computed features...")
-        precomputed_features = load_precomputed_features(data_scheme)
-        PIPELINE.register_features(precomputed_features)
-
-        for model_size in args.models if isinstance(args.models, list) else args.models.split(","):
-            for dataset_name in args.datasets if isinstance(args.datasets, list) else args.datasets.split(","):
                 split_name = f"{data_scheme}.{model_size}"
                 LOGGER.info(f"Loading dataset {dataset_name} and split {split_name}...")
                 dataset = load_dataset(dataset_name, data_scheme, model_size)
