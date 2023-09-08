@@ -4,7 +4,7 @@ from argparse import ArgumentParser
 from datetime import datetime
 from typing import Dict, Optional
 
-from datasets import load_dataset as hf_load_dataset2
+from datasets import load_dataset as hf_load_dataset
 from pyspark.sql import SparkSession, DataFrame
 
 from utils import initialize_logger, initialize_formatter
