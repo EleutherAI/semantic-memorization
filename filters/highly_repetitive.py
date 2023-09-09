@@ -1,3 +1,9 @@
+from pyspark.sql import DataFrame
+from pyspark.sql import functions as F
+from pyspark.sql import types as T
+
+from .base import PIPELINE_SINGLETON
+
 def break_and_compare(ls: list, k: int) -> list:
     """
     This function takes a list ls and an integer k as input and returns a list which is the first chunk of ls that is repeated k times. If no such chunk exists, it returns an empty list.
@@ -66,11 +72,45 @@ def break_and_compare_wrapper(ls: list, start_k: int, end_k: int) -> list:
                     return result, k
             result = break_and_compare(ls[i:], k)
             if result:
-                return result, i, k
+                return result, k
         result = break_and_compare(ls, k)
         if result:
             return result, k
     return [], -1
+
+@PIPELINE_SINGLETON.register_filter()
+def highly_repetitive_filter(dataset: DataFrame, _) -> DataFrame:
+    """Returns the repeating chunk and the number of times a sequence is repeating
+
+    Args:
+        dataset (DataFrame): Dataset containing sequences of tokens
+        _ (PrecomputedFeatures): Unused
+
+    Outputs Include:
+        - `num_repeating`: Number of times a sequence is repeating
+        - `smallest_repeating_chunk`: Smallest repeating token sequence
+    Returns:
+        DataFrame: with additional column of `is_incrementing`
+    """
+    main = dataset.alias("main")
+    repetitive_schema = T.StructType([
+        T.StructField("num_repeating", T.IntegerType()),
+        T.StructField("smallest_repeating_chunk", T.ArrayType(T.LongType()))
+    ])
+    repetitiveUDF = F.udf(lambda seq: break_and_compare_wrapper(seq, 2, 20), repetitive_schema)
+
+    repetitive_counts = main.select("sequence_id", "text").withColumn("repetitive", repetitiveUDF("text"))
+    
+    final = (repetitive_counts.join(main, on="sequence_id", how="left")
+        .drop(repetitive_counts.sequence_id)
+        .drop(repetitive_counts.text)
+        .select(
+            "main.*",
+            "repetitive.*",
+        )
+    )
+    
+    return final
 
 if __name__ == "__main__":
 #     from transformers import AutoTokenizer

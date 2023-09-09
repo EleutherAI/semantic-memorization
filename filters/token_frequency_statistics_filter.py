@@ -73,8 +73,8 @@ def token_frequency_statistics_filter(dataset: DataFrame, features: PrecomputedF
     final = (filtered_frequencies.join(main, on="sequence_id", how="left")
         .drop(filtered_frequencies.sequence_id)
         .select(
-            "filtered.*",
             "main.*",
+            "filtered.*"
         )
     )
     return final
