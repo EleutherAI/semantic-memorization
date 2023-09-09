@@ -104,6 +104,7 @@ if __name__ == '__main__':
     logging.getLogger('botocore').setLevel(logging.DEBUG)
     logging.getLogger('s3transfer').setLevel(logging.DEBUG)
 
+    tqdm.pandas()
     # Parse args and get current process rank
     args = parser.parse_args()
     args.comm = MPI.COMM_WORLD
@@ -134,12 +135,12 @@ if __name__ == '__main__':
             df = pd.read_hdf(part_path, key = 'memorization')
             merged_dataset.append(df)
             os.remove(part_path)
-    
+
+        os.makedirs("results", exist_ok = True)
         merged_dataset = pd.concat(merged_dataset)
-        merged_dataset.to_parquet(f'{args.dataset_type}.parquet')
+        merged_dataset.to_parquet(f'results/{args.dataset_type}.parquet')
         zero_offsets = merged_dataset[merged_dataset['Offset'] == 0]
-        num_duplicates = merged_dataset["Hash"].value_counts()
-        approx_num_duplicates = approx_num_duplicates.reset_index()
+        approx_num_duplicates = merged_dataset["Hash"].value_counts().reset_index()
         approx_num_duplicates = approx_num_duplicates[approx_num_duplicates['count'] > 1]
 
         all_hashes = {}
@@ -148,4 +149,4 @@ if __name__ == '__main__':
         
         zero_offsets['count'] = zero_offsets['Hash'].progress_map(lambda x:all_hashes[x] 
                                                                     if x in all_hashes else 1)
-        zero_offsets.to_parquet(f"{args.dataset_type}_counts.parquet", index = False)
+        zero_offsets.to_parquet(f"results/{args.dataset_type}_counts.parquet", index = False)
