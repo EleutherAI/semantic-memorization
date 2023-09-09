@@ -17,7 +17,6 @@ LOGGER: logging.Logger = initialize_logger()
 SPARK: SparkSession = initialize_spark()
 PIPELINE.register_spark_session(SPARK)
 
-
 def parse_cli_args():
     """
     Parse the command line arguments for the script.
@@ -231,6 +230,8 @@ def run_pipeline(
         dataset = dataset.sample(1.0, seed=sample_seed).limit(sample_size)
 
     transformed_dataset = PIPELINE.transform(dataset)
+    LOGGER.info(f"Transformed Dataset {dataset_name}-{split_name} Schema:")
+    transformed_dataset.printSchema()
     file_name = split_name.replace(".", "_", 1)
     transformed_dataset.coalesce(1).write.parquet(f"datasets/{run_id}/{dataset_name}_{file_name}")
 

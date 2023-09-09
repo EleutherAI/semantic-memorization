@@ -1,3 +1,8 @@
+from pyspark.sql import DataFrame
+from pyspark.sql import functions as F
+from pyspark.sql import types as T
+
+from .base import PIPELINE_SINGLETON
 import re
 
 
@@ -41,7 +46,7 @@ def replace_non_numeric_with_whitespace(text: str) -> str:
     return cleaned_text
 
 
-def incrementing_sequences_filter(text: str) -> bool:
+def incrementing_sequences_filter_wrapper(text: str) -> bool:
     # count number of numeric and non-numeric characters
     num_numeric = 0
     num_non_numeric = 0
@@ -303,6 +308,23 @@ def incrementing_sequences_filter(text: str) -> bool:
 
     return False
 
+@PIPELINE_SINGLETON.register_filter()
+def incrementing_sequences_filter(dataset: DataFrame, _) -> DataFrame:
+    """Returns if a sequence is incrementing
+
+    Args:
+        dataset (DataFrame): Dataset containing sequences of tokens
+        _ (PrecomputedFeatures): Unused
+
+    Returns:
+        DataFrame: with additional column of `is_incrementing`
+    """
+    main = dataset.alias("main")
+    incrementingUDF = F.udf(lambda seq: incrementing_sequences_filter_wrapper(seq), T.BooleanType())
+
+    final = main.withColumn("is_incrementing", incrementingUDF("text"))
+
+    return final
 
 if __name__ == "__main__":
     samp = r"""
