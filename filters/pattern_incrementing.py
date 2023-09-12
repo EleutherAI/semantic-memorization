@@ -3,6 +3,7 @@ from pyspark.sql import functions as F
 from pyspark.sql import types as T
 
 from .base import PIPELINE_SINGLETON
+import unicodedata
 import re
 
 
@@ -12,7 +13,7 @@ def replace_non_numeric_with_whitespace(text: str) -> str:
     new_text = ""
     for i in range(len(text)):
         if text[i].isdigit():
-            new_text += str(int(text[i])) # Fix for characters like '²' not being converted as required
+            new_text += str(unicodedata.digit(text[i])) # Fix for characters like '²' not being converted as required
         elif text[i] == "." and i > 0 and i < len(text) - 1 and text[i - 1].isdigit() and text[i + 1].isdigit():
             new_text += text[i]
         else:
@@ -77,6 +78,11 @@ def incrementing_sequences_filter_wrapper(text: str) -> bool:
 
     # Check for incrementing in chunks
     # Adding this to handle cases like "A.1 , A.2 , A.3 , A.4, B.1 , B.2, B.3, C.1"
+
+    # If length of list is 1, the sequence is not an incrementing pattern
+    if len(ls) <= 1:
+        return False
+    
     ptr = 0
     min_max = {}
     chunk_num = 0
