@@ -12,7 +12,7 @@ def replace_non_numeric_with_whitespace(text: str) -> str:
     new_text = ""
     for i in range(len(text)):
         if text[i].isdigit():
-            new_text += text[i]
+            new_text += str(int(text[i])) # Fix for characters like '²' not being converted as required
         elif text[i] == "." and i > 0 and i < len(text) - 1 and text[i - 1].isdigit() and text[i + 1].isdigit():
             new_text += text[i]
         else:
