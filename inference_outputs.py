@@ -10,7 +10,6 @@ from transformers.modeling_outputs import CausalLMOutputWithPast
 from transformers import AutoTokenizer, GPTNeoXForCausalLM
 from torch.utils.data import Dataset, DataLoader
 from datasets import load_dataset, ReadInstruction
-from multiprocessing import Process
 from argparse import ArgumentParser
 from tqdm import tqdm
 from datetime import datetime
@@ -56,65 +55,6 @@ def load_model(split_name):
     model = split_name.split("duped.")[-1]
     corresponding_model = f"EleutherAI/pythia-{model}{'-deduped' if isDeduped else ''}"
     return GPTNeoXForCausalLM.from_pretrained(corresponding_model, device_map="auto")
-
-
-def calculate_perplexity(logits: torch.Tensor, labels: torch.Tensor) -> torch.float64:
-    """
-    Clauclate the perplexity of a sequence given the logits and labels
-
-    Args:
-        logits (torch.Tensor): The logits for the model's generation
-        labels (torch.Tensor): The true tokens for the sequence
-
-    Returns:
-        torch.float64: The model's perplexity for the given sequence
-    """
-    # Store the probabilities for each token. These will be summed later, but having the
-    # individual probabilities is helpful for debugging.
-    try:
-        token_probs = []
-
-        # Don't include the final token logits. There are no labels for
-        # these since the sequence has ended.
-        num_special_tokens = len(labels[labels == 0])
-        num_normal_tokens = len(labels) - num_special_tokens
-
-        for token_index in range(num_normal_tokens - 1):
-            # Map the logits to probabilities.
-            # predicted_probs = torch.softmax(logits[token_index].view(torch.float64), dim=0, dtype=torch.float16)
-            predicted_probs = torch.softmax(logits[token_index], dim=0, dtype=torch.float64)
-            # Get the probability of the correct label.
-            label_prob = predicted_probs[labels[token_index + 1]]
-
-            # Check if the label probability is 0. This is likely due a rounding error. Recalculate
-            # the probability using double precision.
-            # if label_prob == 0:
-            #     predicted_probs = torch.softmax(logits[token_index], dim=0, dtype=torch.float64)
-            #     label_prob = predicted_probs[labels[token_index + 1]]
-
-            # Store the probability for this token.
-            token_probs.append(label_prob.detach())
-
-        mid_index = len(token_probs) // 2
-        prompt_ppl = None
-        log_likelihood = torch.log(torch.stack(token_probs[:mid_index])).sum()
-        cross_entropy = -log_likelihood / len(token_probs)
-        prompt_ppl = torch.exp(cross_entropy).item()
-
-        generation_ppl = None
-        log_likelihood = torch.log(torch.stack(token_probs[mid_index:])).sum()
-        cross_entropy = -log_likelihood / len(token_probs)
-        generation_ppl = torch.exp(cross_entropy).item()
-
-        sequence_ppl = None
-        log_likelihood = torch.log(torch.stack(token_probs)).sum()
-        cross_entropy = -log_likelihood / len(token_probs)
-        sequence_ppl = torch.exp(cross_entropy).item()
-
-        return prompt_ppl, generation_ppl, sequence_ppl
-    except Exception as e:
-        print(f"Failed to calulcate perplexity: {e}")
-        return -1, -1, -1
 
 
 def get_batch_size(model_name: str) -> int:
@@ -166,7 +106,7 @@ def get_dataset(dataset_name: str, split_name: str, sample: int = None) -> pd.Da
     return dataset if sample is None else dataset.sample(sample).reset_index(drop=True)
 
 
-def run_model_inferences(split_name: str, run_id: str, dataset: str, features: list, batch_size: int, sample_size: int = None):
+def run_model_inferences(split_name: str, run_id: str, dataset: str, batch_size: int, sample_size: int = None):
     """
     Run inference for the given model and dataset. Save the results to a CSV file.
 
@@ -182,9 +122,8 @@ def run_model_inferences(split_name: str, run_id: str, dataset: str, features: l
     pile_dataset = PileDataset(pile_sequences, tokenizer)
     data_loader = DataLoader(pile_dataset, batch_size=batch_size)
 
-    num_processes = multiprocessing.cpu_count() // 2
-    # num_processes = 6
-    with multiprocessing.Pool(num_processes) as pool:
+    with torch.multiprocessing.Pool(processes=4) as p:
+
         with torch.no_grad():
             desc = f"Collecting {dataset} inference responses for {split_name}"
             for batch in tqdm(data_loader, desc=desc):
@@ -204,101 +143,22 @@ def run_model_inferences(split_name: str, run_id: str, dataset: str, features: l
                     labels=tokenized_batch["input_ids"],
                     output_attentions=True,
                 )
-                logits = outputs.logits.detach().cpu()
-                labels = labels.detach().cpu()
-                loss = outputs.loss.detach().cpu()
-                attentions = [attn_tensor.detach().cpu() for attn_tensor in outputs.attentions]
-
-                inference_logs = accumilate_inference_log(batch[0], labels, logits, loss, attentions, features, pool)
-                save_inference_log(split_name, run_id, dataset, inference_logs)
-                torch.cuda.empty_cache()
 
 
-def gini(array):
-    """Calculate the Gini coefficient of a numpy array. Ref: https://github.com/oliviaguest/gini"""
-    # based on bottom eq: http://www.statsdirect.com/help/content/image/stat0206_wmf.gif
-    # from: http://www.statsdirect.com/help/default.htm#nonparametric_methods/gini.htm
-    array = array.flatten()
-    if np.amin(array) < 0:
-        array -= np.amin(array)
-    array = np.sort(array)
-    index = np.arange(1,array.shape[0]+1)
-    n = array.shape[0]
-    return ((np.sum((2 * index - n  - 1) * array)) / (n * np.sum(array)))
+
+                results = p.map(parse_attn, [t.detach().cpu() for t in outputs.attentions])
+                print(results)
+
+                # inference_logs = pd.DataFrame({
+                #     "Loss": outputs.loss.detach().cpu().tolist(),
+                #     "Logits": outputs.logits.detach().cpu().tolist(),
+                #     "Attentions": [attn_tensor.detach().cpu().tolist() for attn_tensor in outputs.attentions],
+                # })
+                # save_inference_log(split_name, run_id, dataset, inference_logs)
+                # torch.cuda.empty_cache()
 
 
-def accumilate_inference_log(
-    batch_sequence_ids: list, labels: torch.Tensor, logits: torch.Tensor, loss: torch.Tensor, attentions: list[torch.Tensor], features: list, pool: multiprocessing.Pool
-):
-    """
-    Extract the desired data from the model response and save it to a CSV file.
-
-    Args:
-        batch_sequence_ids (list): The list containing the sequence ids
-        labels (torch.Tensor): The labels for the batch. Used to calculate perplexity
-        outputs (CausalLMOutputWithPast): The response from the Pythia model
-        features (list): The list of features to calculate. A subset of [loss, ppl, attn]
-    """
-    inference_logs = []
-    perplexities = [calculate_perplexity(logits[i], labels[i]) for i in range(len(logits))] if "ppl" in features else None
-    # perplexities = pool.starmap(calculate_perplexity, zip(logits, labels))
-    e=1e-8
-
-    method_args = []
-    for index, id_tensor in enumerate(batch_sequence_ids):
-        method_args.append((labels, loss, attentions, features, perplexities, e, index, id_tensor))
-        # inference_log = get_inference_log(labels, outputs, features, perplexities, e, index, id_tensor)
-        # inference_logs.append(inference_log)
-
-    inference_logs = pool.starmap(get_inference_log, method_args)
-    torch.cuda.empty_cache()
-    del method_args
-    return inference_logs
-
-def get_inference_log(labels, loss, attentions, features, perplexities, e, index, id_tensor):
-    total_entropy = []
-    total_gini = []
-    inference_log = {"index": id_tensor.detach().item()}
-    if "loss" in features:
-        inference_log["loss"] = loss.detach().item() / len(labels[index])
-    if "attn" in features:
-        for layer_index, attention_layer in enumerate(attentions):
-            get_layer_entropy(e, index, total_entropy, total_gini, inference_log, layer_index, attention_layer)
-
-        average_entropy = np.mean(total_entropy)
-        average_gini = np.mean(total_gini)
-        inference_log[f"avg entropy"] = average_entropy
-        inference_log[f"avg gini"] = average_gini
-    if "ppl" in features:
-        inference_log["prompt_perplexity"] = perplexities[index][0]
-        inference_log["generation_perplexity"] = perplexities[index][1]
-        inference_log["sequence_perplexity"] = perplexities[index][2]
-
-    return inference_log
-
-
-def get_layer_entropy(e, index, total_entropy, total_gini, inference_log, layer_index, attention_layer):
-    sequence_attention = attention_layer[index].detach()
-    head_e = []
-    gini_head = []
-
-    for head_index, head in enumerate(sequence_attention):
-        attention_head = head.detach().cpu().numpy()
-        attention_head += e #adding 'e' to attention weights that are 0 to avoid log zero error while calculating entropy. Entropy = - ∑(w * log(w))
-        gini_coefficient = gini(attention_head)
-        gini_head.append(gini_coefficient)
-        head_entropy = -np.sum(attention_head * np.log(attention_head))
-        head_e.append(head_entropy)
-        inference_log[f"gini_head{head_index+1}_layer{layer_index+1}"] = gini_coefficient
-        inference_log[f"entropy_head{head_index+1}_layer{layer_index+1}"] = head_entropy
-
-    avg_head = np.mean(head_e)
-    avg_head_gini = np.mean(gini_head)
-    total_entropy.append(avg_head)
-    total_gini.append(avg_head_gini)
-
-
-def save_inference_log(split_name: str, run_id: str, dataset: pd.DataFrame, inference_logs: list):
+def save_inference_log(split_name: str, run_id: str, dataset: str, inference_logs_df: pd.DataFrame):
     """Saves the accumilated inference log in a pandas dataframe
 
     Args:
@@ -308,8 +168,11 @@ def save_inference_log(split_name: str, run_id: str, dataset: pd.DataFrame, infe
         inference_logs (list): Accumilated inference logs
     """
     file_name = split_name.replace(".", "_")
-    inference_logs_df = pd.DataFrame(inference_logs)
     inference_logs_df.to_csv(f"datasets/{run_id}/{dataset}_{file_name}.csv", index=False, mode="a")
+
+
+def parse_attn(attn_t):
+    return attn_t.tolist()
 
 def parse_cli_args():
     parser = ArgumentParser()
@@ -376,7 +239,6 @@ def main():
     print(f"Models: {args.models}")
     print(f"Schemes: {args.schemes}")
     print(f"Datasets: {args.datasets}")
-    print(f"Features: {args.features}")
     if args.sample_size is not None:
         print(f"Sample size: {args.sample_size}")
     print("---------------------------------------------------------------------------")
@@ -387,7 +249,7 @@ def main():
                 split_name = f"{data_scheme}.{model_size}"
                 print(f"Collecting inferences for {split_name} on {dataset} dataset")
                 batch_size = args.batch_size if args.batch_size is not None else get_batch_size(model_size)
-                run_model_inferences(split_name, experiment_timestamp, dataset, args.features, batch_size, args.sample_size)
+                run_model_inferences(split_name, experiment_timestamp, dataset, batch_size, args.sample_size)
 
 
 if __name__ == "__main__":
