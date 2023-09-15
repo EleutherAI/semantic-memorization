@@ -146,8 +146,16 @@ def run_model_inferences(split_name: str, run_id: str, dataset: str, batch_size:
 
 
 
-                results = p.map(parse_attn, [t.detach().cpu() for t in outputs.attentions])
-                print(results)
+                # results = p.map(parse_attn, [t.detach().cpu() for t in outputs.attentions])
+                # print(results)
+
+                # attentions_table = {}
+                for i in tqdm(range(len(batch[0]))):
+                    current_example_id = batch[0][i]
+                    current_example_attentions = torch.stack(outputs.attentions)[:, i, :]
+                    # attentions_table[current_example_id] = current_example_attentions
+                    torch.save(current_example_attentions, f"datasets/{run_id}/{dataset}_attentions_{current_example_id}.pt")
+                    # print(current_example_attentions.shape)
 
                 # inference_logs = pd.DataFrame({
                 #     "Loss": outputs.loss.detach().cpu().tolist(),

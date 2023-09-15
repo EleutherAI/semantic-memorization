@@ -138,7 +138,7 @@ def get_batch_size(model_name: str) -> int:
         "2.8b": 128,
         # Large
         "6.9b": 64,
-        "12b": 64,
+        "12b": 32,
     }
     model_size = ".".join(model_name.split(".")[1:])
     return size_batch_map[model_size]

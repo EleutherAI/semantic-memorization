@@ -3,7 +3,7 @@
 
 
 !datasets/eval/Pythia_70m_Deduped_Low_Perplexity_Labeling_Formatted.csv
-
+*.pt
 *.zip
 .vscode
 ### Data ###
