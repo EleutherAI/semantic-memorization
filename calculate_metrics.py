@@ -190,24 +190,25 @@ def load_precomputed_features(schema: str, is_test=False) -> Dict[PrecomputedFea
     for enum, name, split, column_mapping in hf_dataset_names:
         cache_path = f"{SPARK_CACHE_DIR}/{name}-{split}"
 
-        if is_test:
-            cache_path = cache_path + "-test"
+        # If we're testing, then control the number of rows to load
+        num_test_rows = 3000
+        adjusted_split = f"{split}-test" if is_test else split
+        adjusted_hf_split = f"{split}[:{num_test_rows}]" if is_test else split
+        adjusted_cache_path = f"{cache_path}-test" if is_test else cache_path
 
-        if os.path.isdir(cache_path):
-            LOGGER.info(f"Dataset {name}-{split} already exists, skipping the download.")
-            features[enum] = SPARK.read.parquet(cache_path)
+        if os.path.isdir(adjusted_cache_path):
+            LOGGER.info(f"Dataset {name}-{adjusted_split} already exists, skipping the download.")
+            features[enum] = SPARK.read.parquet(adjusted_cache_path)
             continue
 
-        LOGGER.info(f"Downloading dataset {name}-{split}...")
-        if is_test:
-            split = split + "[:3000]"
-        dataset = hf_load_dataset(name, split=split).to_pandas().rename(columns=column_mapping)
+        LOGGER.info(f"Downloading dataset {name}-{adjusted_split}...")
+        dataset = hf_load_dataset(name, split=adjusted_hf_split).to_pandas().rename(columns=column_mapping)
 
-        LOGGER.info(f"Converting and caching the dataset {name}-{split} as Spark DataFrame {cache_path}...")
+        LOGGER.info(f"Converting and caching the dataset {name}-{adjusted_split} as Spark DataFrame {adjusted_cache_path}...")
         # Convert the Pandas DataFrame dataset to Spark DataFrame in Parquet
-        SPARK.createDataFrame(dataset).repartition(NUM_PARTITIONS).write.parquet(cache_path)
+        SPARK.createDataFrame(dataset).repartition(NUM_PARTITIONS).write.parquet(adjusted_cache_path)
 
-        features[enum] = SPARK.read.parquet(cache_path).cache()
+        features[enum] = SPARK.read.parquet(adjusted_cache_path).cache()
 
     return features
 
@@ -254,7 +255,20 @@ def main():
         LOGGER.info(f"Sample seed: {args.sample_seed}")
     LOGGER.info("---------------------------------------------------------------------------")
 
-    for model_size in args.models if isinstance(args.models, list) else args.models.split(","):
+    model_sizes = args.models if isinstance(args.models, list) else args.models.split(",")
+    dataset_names = args.datasets if isinstance(args.datasets, list) else args.datasets.split(",")
+    data_schemes = args.schemes if isinstance(args.schemes, list) else args.schemes.split(",")
+
+    for dataset_name in dataset_names:
+        is_test = dataset_name == "test"
+        is_pile = dataset_name.split("-")[0] == "pile"
+
+        for scheme in data_schemes:
+            LOGGER.info("Loading pre-computed features...")
+            precomputed_features = load_precomputed_features(scheme, is_test=is_test)
+            PIPELINE.register_features(precomputed_features)
+
+    for model_size in model_sizes:
         for dataset_name in args.datasets if isinstance(args.datasets, list) else args.datasets.split(","):
             is_test = dataset_name == "test"
             for data_scheme in args.schemes if isinstance(args.schemes, list) else args.schemes.split(","):
