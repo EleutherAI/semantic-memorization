@@ -13,7 +13,7 @@ def replace_non_numeric_with_whitespace(text: str) -> str:
     new_text = ""
     for i in range(len(text)):
         if text[i].isdigit():
-            new_text += str(unicodedata.digit(text[i])) # Fix for characters like '²' not being converted as required
+            new_text += str(unicodedata.digit(text[i]))  # Fix for characters like '²' not being converted as required
         elif text[i] == "." and i > 0 and i < len(text) - 1 and text[i - 1].isdigit() and text[i + 1].isdigit():
             new_text += text[i]
         else:
@@ -82,7 +82,7 @@ def incrementing_sequences_filter_wrapper(text: str) -> bool:
     # If length of list is 1, the sequence is not an incrementing pattern
     if len(ls) <= 1:
         return False
-    
+
     ptr = 0
     min_max = {}
     chunk_num = 0
@@ -314,6 +314,7 @@ def incrementing_sequences_filter_wrapper(text: str) -> bool:
 
     return False
 
+
 @PIPELINE_SINGLETON.register_filter()
 def incrementing_sequences_filter(dataset: DataFrame, _) -> DataFrame:
     """Returns if a sequence is incrementing
@@ -331,6 +332,7 @@ def incrementing_sequences_filter(dataset: DataFrame, _) -> DataFrame:
     final = main.withColumn("is_incrementing", incrementingUDF("text"))
 
     return final
+
 
 if __name__ == "__main__":
     samp = r"""

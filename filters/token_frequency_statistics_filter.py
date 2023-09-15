@@ -70,11 +70,5 @@ def token_frequency_statistics_filter(dataset: DataFrame, features: PrecomputedF
     ).alias("filtered")
 
     # Finally, re-attach the memorization score from the original dataset
-    final = (filtered_frequencies.join(main, on="sequence_id", how="left")
-        .drop(filtered_frequencies.sequence_id)
-        .select(
-            "main.*",
-            "filtered.*"
-        )
-    )
+    final = filtered_frequencies.join(main, on="sequence_id", how="left").drop(filtered_frequencies.sequence_id).select("main.*", "filtered.*")
     return final
