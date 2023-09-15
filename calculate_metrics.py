@@ -142,10 +142,7 @@ def load_dataset(dataset_name: str, scheme: str, model_size: str) -> DataFrame:
         # We'll also rename the memorization score column for consistency.
         dataset = dataset[required_columns].rename(columns={model_size: "memorization_score"})
     elif is_test:
-        dataset = (
-            hf_load_dataset(hf_dataset_name, split="train")
-            .to_pandas()
-        )
+        dataset = hf_load_dataset(hf_dataset_name, split="train").to_pandas()
         dataset.tokens = dataset.tokens.map(lambda x: x.tolist())
     else:
         dataset = hf_load_dataset(hf_dataset_name, split=split_name).to_pandas().rename(columns={"index": "sequence_id"})
@@ -161,7 +158,7 @@ def load_dataset(dataset_name: str, scheme: str, model_size: str) -> DataFrame:
     return SPARK.read.parquet(cache_path)
 
 
-def load_precomputed_features(schema: str, is_test = False) -> Dict[PrecomputedFeatureName, DataFrame]:
+def load_precomputed_features(schema: str, is_test=False) -> Dict[PrecomputedFeatureName, DataFrame]:
     """
     Load the pre-computed features from HuggingFace datasets. If the features are not locally available, then
     download them from HuggingFace datasets and cache them as Spark DataFrames in Parquet format.
@@ -175,11 +172,7 @@ def load_precomputed_features(schema: str, is_test = False) -> Dict[PrecomputedF
     """
     features = {}
     hf_dataset_names = [
-        (
-            PrecomputedFeatureName.SEQUENCE_FREQUENCIES, 
-            f"usvsnsp/{schema}-num-duplicates", 
-            "train", 
-            {"Index": "sequence_id", "Counts": "frequency"}),
+        (PrecomputedFeatureName.SEQUENCE_FREQUENCIES, f"usvsnsp/{schema}-num-duplicates", "train", {"Index": "sequence_id", "Counts": "frequency"}),
         (
             PrecomputedFeatureName.MEMORIZED_TOKEN_FREQUENCIES,
             f"usvsnsp/{schema}-num-frequencies",
@@ -231,6 +224,8 @@ def run_pipeline(
         dataset = dataset.sample(1.0, seed=sample_seed).limit(sample_size)
 
     transformed_dataset = PIPELINE.transform(dataset)
+    LOGGER.info(f"Transformed Dataset {dataset_name}-{split_name} Schema:")
+    transformed_dataset.printSchema()
     file_name = split_name.replace(".", "_", 1)
     transformed_dataset.coalesce(1).write.parquet(f"datasets/{run_id}/{dataset_name}_{file_name}")
 
@@ -258,14 +253,13 @@ def main():
     if args.sample_seed is not None:
         LOGGER.info(f"Sample seed: {args.sample_seed}")
     LOGGER.info("---------------------------------------------------------------------------")
-    
-    
+
     for model_size in args.models if isinstance(args.models, list) else args.models.split(","):
         for dataset_name in args.datasets if isinstance(args.datasets, list) else args.datasets.split(","):
             is_test = dataset_name == "test"
             for data_scheme in args.schemes if isinstance(args.schemes, list) else args.schemes.split(","):
                 LOGGER.info("Loading pre-computed features...")
-                precomputed_features = load_precomputed_features(data_scheme, is_test = is_test)
+                precomputed_features = load_precomputed_features(data_scheme, is_test=is_test)
                 PIPELINE.register_features(precomputed_features)
 
                 split_name = f"{data_scheme}.{model_size}"
