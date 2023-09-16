@@ -132,7 +132,7 @@ def highly_repetitive_filter(dataset: DataFrame, _) -> DataFrame:
     repetitive_counts = repetitive_counts.withColumn("smallest_repeating_chunk", smallest_repeating_chunkUDF("repetitive.repeating_chunk"))
 
     final = (
-        repetitive_counts.join(main, on="sequence_id", how="left")
+        main.join(repetitive_counts, on="sequence_id", how="left")
         .drop(repetitive_counts.sequence_id)
         .drop(repetitive_counts.text)
         .drop(repetitive_counts.repetitive.repeating_chunk)

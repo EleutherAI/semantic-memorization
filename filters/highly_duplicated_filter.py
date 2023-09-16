@@ -21,7 +21,7 @@ def sequence_duplicates_filter(dataset: DataFrame, features: PrecomputedFeatures
     sequence_frequencies = features[PrecomputedFeatureName.SEQUENCE_FREQUENCIES].alias("sequence_frequencies")
 
     # Join on `sequence_id` to extract the sequence frequency
-    final = main.join(sequence_frequencies, on="sequence_id", how="inner").select(
+    final = main.join(sequence_frequencies, on="sequence_id", how="left").select(
         "main.*",
         F.col("sequence_frequencies.frequency").alias("sequence_duplicates"),
     )

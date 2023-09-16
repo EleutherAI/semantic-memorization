@@ -267,22 +267,23 @@ def run_pile_pipeline(
 
     no_scores = dataset.select("sequence_id", "tokens")
     transformed_dataset = PIPELINE.transform(no_scores).alias("transformed")
-    # TODO: Iterate through different model sizes and stitch the scores back together
-    # then, export all of them
+
+    # Memorization score already exists per model size, we'll perform the join to export
+    # each dataset by model size separately.
     for model_size in model_sizes:
         memorization_scores = dataset.select(
             "sequence_id",
             F.col(model_size).alias("memorization_score"),
         ).alias("score")
-        transformed_dataset = transformed_dataset.join(memorization_scores, on="sequence_id", how="left").select(
+        joined_dataset = transformed_dataset.join(memorization_scores, on="sequence_id", how="left").select(
             "transformed.*",
             "score.memorization_score",
         )
         split_name = f"{data_scheme}.{model_size}"
         LOGGER.info(f"Transformed Dataset {dataset_name}-{split_name} Schema:")
-        transformed_dataset.printSchema()
+        joined_dataset.printSchema()
         file_name = split_name.replace(".", "_", 1)
-        transformed_dataset.coalesce(NUM_OUTPUT_PARTITIONS).write.parquet(f"datasets/{run_id}/{dataset_name}_{file_name}")
+        joined_dataset.coalesce(NUM_OUTPUT_PARTITIONS).write.parquet(f"datasets/{run_id}/{dataset_name}_{file_name}")
 
 
 def main():
