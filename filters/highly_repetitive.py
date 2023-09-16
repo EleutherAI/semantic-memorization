@@ -122,7 +122,10 @@ def highly_repetitive_filter(dataset: DataFrame, _) -> DataFrame:
             T.StructField("repeating_chunk", T.ArrayType(T.LongType())),
         ]
     )
-    repetitiveUDF = F.udf(lambda seq: break_and_compare_wrapper(seq, 2, 5), repetitive_schema)
+
+    start_k = 2
+    end_k = 5
+    repetitiveUDF = F.udf(lambda seq: break_and_compare_wrapper(seq, start_k, end_k), repetitive_schema)
     smallest_repeating_chunkUDF = F.udf(lambda seq: find_smallest_repeating_unit(seq), T.ArrayType(T.LongType()))
 
     repetitive_counts = main.select("sequence_id", "text").withColumn("repetitive", repetitiveUDF("text"))

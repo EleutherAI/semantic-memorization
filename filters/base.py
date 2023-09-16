@@ -43,6 +43,7 @@ class MetricFilterPipeline:
 
         for filter_func in self.filters:
             # Checkpointing each filter to side-step potential OOM issues
+            LOGGER.info(f"Running filter {filter_func.__name__}...")
             current_dataset: DataFrame = filter_func(current_dataset, self.features).checkpoint()
 
         return current_dataset
