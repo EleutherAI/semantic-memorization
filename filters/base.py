@@ -5,7 +5,7 @@ from pyspark.sql import DataFrame, SparkSession
 
 from filters.constants import PrecomputedFeatureName
 from utils import initialize_logger
-from spark.constants import NUM_PARTITIONS, SPARK_CACHE_DIR
+from spark.constants import NUM_OUTPUT_PARTITIONS, SPARK_CACHE_DIR
 
 FilterFunc: TypeAlias = Callable[..., Any]
 PrecomputedFeatures: TypeAlias = Dict[PrecomputedFeatureName, DataFrame]

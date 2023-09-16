@@ -2,15 +2,16 @@ import logging
 import os
 from argparse import ArgumentParser
 from datetime import datetime
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 
 from datasets import load_dataset as hf_load_dataset
 from pyspark.sql import SparkSession, DataFrame
+from pyspark.sql import functions as F
 
 from utils import initialize_logger, initialize_formatter
 from filters import PIPELINE
 from filters.constants import PrecomputedFeatureName
-from spark.constants import NUM_PARTITIONS, SPARK_CACHE_DIR
+from spark.constants import NUM_SPARK_PARTITIONS, NUM_OUTPUT_PARTITIONS, SPARK_CACHE_DIR
 from spark.utils import initialize_spark
 
 LOGGER: logging.Logger = initialize_logger()
@@ -82,9 +83,58 @@ def parse_cli_args():
     return parser.parse_args()
 
 
-def load_dataset(dataset_name: str, scheme: str, model_size: str) -> DataFrame:
+def load_pile_dataset(scheme: str) -> DataFrame:
     """
-    Load the dataset from HuggingFace datasets. If the dataset is not locally available, then
+    Load the Pile dataset from HuggingFace. If the dataset is not locally available, then
+    download it from HuggingFace datasets and cache it as a Spark DataFrame in Parquet format.
+
+    Args:
+        scheme (str): Data scheme used for Pythia model training.
+
+    Returns:
+        DataFrame: Spark DataFrame containing the dataset.
+    """
+    hf_dataset_name = f"EleutherAI/pile-{scheme}-pythia-random-sampled"
+    cache_path = f"{SPARK_CACHE_DIR}/{hf_dataset_name}"
+
+    if os.path.isdir(cache_path):
+        LOGGER.info(f"Dataset {hf_dataset_name} already exists, skipping the download.")
+        return SPARK.read.parquet(cache_path)
+
+    LOGGER.info(f"Downloading dataset {hf_dataset_name}...")
+
+    # The original dataset has a different capitalization for the column names, so we'll rename them along
+    # with other columns for clarity and consistency.
+    dataset = (
+        hf_load_dataset(hf_dataset_name, split="train")
+        .to_pandas()
+        .rename(
+            columns={
+                "Index": "sequence_id",
+                "Tokens": "tokens",
+                "70M": "70m",
+                "160M": "160m",
+                "410M": "410m",
+                "1B": "1b",
+                "1.4B": "1.4b",
+                "2.8B": "2.8b",
+                "6.9B": "6.9b",
+                "12B": "12b",
+            }
+        )
+    )
+    dataset.tokens = dataset.tokens.map(lambda x: x.tolist())
+
+    LOGGER.info(f"Converting and caching the dataset {hf_dataset_name} as Spark DataFrame in {cache_path}...")
+    # Convert the Pandas DataFrame dataset to Spark DataFrame in Parquet
+    SPARK.createDataFrame(dataset).repartition(NUM_SPARK_PARTITIONS).write.parquet(cache_path)
+
+    return SPARK.read.parquet(cache_path)
+
+
+def load_non_pile_dataset(dataset_name: str, scheme: str, model_size: str) -> DataFrame:
+    """
+    Load the non-Pile dataset from HuggingFace. If the dataset is not locally available, then
     download it from HuggingFace datasets and cache it as a Spark DataFrame in Parquet format.
 
     Args:
@@ -97,17 +147,15 @@ def load_dataset(dataset_name: str, scheme: str, model_size: str) -> DataFrame:
     """
     split_name = f"{scheme}.{model_size}"
     required_columns = ["sequence_id", "tokens"]
-    is_pile = dataset_name.split("-")[0] == "pile"
-    is_test = dataset_name.split("-")[0] == "test"
+    is_test = dataset_name == "test"
+    is_memorized = dataset_name == "memories"
 
-    if is_pile and not is_test:
-        hf_dataset_name = f"EleutherAI/pile-{scheme}-pythia-random-sampled"
+    if is_memorized:
+        hf_dataset_name = f"EleutherAI/pythia-memorized-evals"
     elif is_test:
         hf_dataset_name = f"usvsnsp/pile-test-sampled"
-    else:
-        hf_dataset_name = f"EleutherAI/pythia-memorized-evals"
 
-    cache_name = hf_dataset_name if is_pile or is_test else f"{hf_dataset_name}-{split_name}"
+    cache_name = hf_dataset_name if is_test else f"{hf_dataset_name}-{split_name}"
     cache_path = f"{SPARK_CACHE_DIR}/{cache_name}"
 
     if os.path.isdir(cache_path):
@@ -115,45 +163,17 @@ def load_dataset(dataset_name: str, scheme: str, model_size: str) -> DataFrame:
         return SPARK.read.parquet(cache_path)
 
     LOGGER.info(f"Downloading dataset {hf_dataset_name}...")
-    if is_pile:
-        # The original dataset has a different capitalization for the column names, so we'll rename them along
-        # with other columns for clarity and consistency.
-        dataset = (
-            hf_load_dataset(hf_dataset_name, split="train")
-            .to_pandas()
-            .rename(
-                columns={
-                    "Index": "sequence_id",
-                    "Tokens": "tokens",
-                    "70M": "70m",
-                    "160M": "160m",
-                    "410M": "410m",
-                    "1B": "1b",
-                    "1.4B": "1.4b",
-                    "2.8B": "2.8b",
-                    "6.9B": "6.9b",
-                    "12B": "12b",
-                }
-            )
-        )
-        dataset.tokens = dataset.tokens.map(lambda x: x.tolist())
-        # This dataset already contains the memorization score, we'll fetch it by the model parameter size.
-        required_columns.append(model_size)
-        # We'll also rename the memorization score column for consistency.
-        dataset = dataset[required_columns].rename(columns={model_size: "memorization_score"})
-    elif is_test:
-        dataset = hf_load_dataset(hf_dataset_name, split="train").to_pandas()
-        dataset.tokens = dataset.tokens.map(lambda x: x.tolist())
-    else:
+    if is_memorized:
         dataset = hf_load_dataset(hf_dataset_name, split=split_name).to_pandas().rename(columns={"index": "sequence_id"})
         dataset.tokens = dataset.tokens.map(lambda x: x.tolist())
         dataset = dataset[required_columns]
-        # This dataset already indicates all sequences are memorized.
-        dataset["memorization_score"] = 1.0
+    elif is_test:
+        dataset = hf_load_dataset(hf_dataset_name, split="train").to_pandas()
+        dataset.tokens = dataset.tokens.map(lambda x: x.tolist())
 
     LOGGER.info(f"Converting and caching the dataset {hf_dataset_name} as Spark DataFrame in {cache_path}...")
     # Convert the Pandas DataFrame dataset to Spark DataFrame in Parquet
-    SPARK.createDataFrame(dataset).repartition(NUM_PARTITIONS).write.parquet(cache_path)
+    SPARK.createDataFrame(dataset).repartition(NUM_SPARK_PARTITIONS).write.parquet(cache_path)
 
     return SPARK.read.parquet(cache_path)
 
@@ -206,14 +226,14 @@ def load_precomputed_features(schema: str, is_test=False) -> Dict[PrecomputedFea
 
         LOGGER.info(f"Converting and caching the dataset {name}-{adjusted_split} as Spark DataFrame {adjusted_cache_path}...")
         # Convert the Pandas DataFrame dataset to Spark DataFrame in Parquet
-        SPARK.createDataFrame(dataset).repartition(NUM_PARTITIONS).write.parquet(adjusted_cache_path)
+        SPARK.createDataFrame(dataset).repartition(NUM_SPARK_PARTITIONS).write.parquet(adjusted_cache_path)
 
         features[enum] = SPARK.read.parquet(adjusted_cache_path).cache()
 
     return features
 
 
-def run_pipeline(
+def run_non_pile_pipeline(
     dataset: DataFrame,
     dataset_name: str,
     split_name: str,
@@ -225,10 +245,44 @@ def run_pipeline(
         dataset = dataset.sample(1.0, seed=sample_seed).limit(sample_size)
 
     transformed_dataset = PIPELINE.transform(dataset)
+    # Non-pile datasets already indicate that all sequences are memorized.
+    transformed_dataset = transformed_dataset.withColumn("memorization_score", F.lit(1.0))
     LOGGER.info(f"Transformed Dataset {dataset_name}-{split_name} Schema:")
     transformed_dataset.printSchema()
     file_name = split_name.replace(".", "_", 1)
-    transformed_dataset.coalesce(1).write.parquet(f"datasets/{run_id}/{dataset_name}_{file_name}")
+    transformed_dataset.coalesce(NUM_OUTPUT_PARTITIONS).write.parquet(f"datasets/{run_id}/{dataset_name}_{file_name}")
+
+
+def run_pile_pipeline(
+    dataset: DataFrame,
+    dataset_name: str,
+    data_scheme: str,
+    model_sizes: List[str],
+    run_id: str,
+    sample_size: Optional[int] = None,
+    sample_seed: Optional[int] = None,
+) -> None:
+    if sample_size is not None:
+        dataset = dataset.sample(1.0, seed=sample_seed).limit(sample_size)
+
+    no_scores = dataset.select("sequence_id", "tokens")
+    transformed_dataset = PIPELINE.transform(no_scores).alias("transformed")
+    # TODO: Iterate through different model sizes and stitch the scores back together
+    # then, export all of them
+    for model_size in model_sizes:
+        memorization_scores = dataset.select(
+            "sequence_id",
+            F.col(model_size).alias("memorization_score"),
+        ).alias("score")
+        transformed_dataset = transformed_dataset.join(memorization_scores, on="sequence_id", how="left").select(
+            "transformed.*",
+            "score.memorization_score",
+        )
+        split_name = f"{data_scheme}.{model_size}"
+        LOGGER.info(f"Transformed Dataset {dataset_name}-{split_name} Schema:")
+        transformed_dataset.printSchema()
+        file_name = split_name.replace(".", "_", 1)
+        transformed_dataset.coalesce(NUM_OUTPUT_PARTITIONS).write.parquet(f"datasets/{run_id}/{dataset_name}_{file_name}")
 
 
 def main():
@@ -261,12 +315,28 @@ def main():
 
     for dataset_name in dataset_names:
         is_test = dataset_name == "test"
-        is_pile = dataset_name.split("-")[0] == "pile"
+        is_memorized = dataset_name == "memories"
+        is_pile = dataset_name == "pile"
 
-        for scheme in data_schemes:
+        for data_scheme in data_schemes:
             LOGGER.info("Loading pre-computed features...")
-            precomputed_features = load_precomputed_features(scheme, is_test=is_test)
+            precomputed_features = load_precomputed_features(data_scheme, is_test=is_test)
             PIPELINE.register_features(precomputed_features)
+
+            if is_memorized:
+                # The memorized dataset has multiple splits by the model size
+                for model_size in model_sizes:
+                    split_name = f"{data_scheme}.{model_size}"
+                    LOGGER.info(f"Loading dataset {dataset_name} and split {split_name}...")
+                    dataset = load_non_pile_dataset(dataset_name, data_scheme, model_size)
+                    LOGGER.info(f"Calculating metrics for {split_name} on dataset {dataset_name}...")
+                    run_non_pile_pipeline(dataset, dataset_name, split_name, args.run_id, args.sample_size, args.sample_seed)
+            elif is_pile:
+                LOGGER.info(f"Loading dataset {dataset_name}...")
+                # The pile dataset contains all model sizes in a single split
+                dataset = load_pile_dataset(data_scheme)
+                LOGGER.info(f"Calculating metrics for {data_scheme} on dataset {dataset_name}...")
+                run_pile_pipeline(dataset, dataset_name, data_scheme, model_sizes, args.run_id, args.sample_size, args.sample_seed)
 
     for model_size in model_sizes:
         for dataset_name in args.datasets if isinstance(args.datasets, list) else args.datasets.split(","):
@@ -278,9 +348,9 @@ def main():
 
                 split_name = f"{data_scheme}.{model_size}"
                 LOGGER.info(f"Loading dataset {dataset_name} and split {split_name}...")
-                dataset = load_dataset(dataset_name, data_scheme, model_size)
+                dataset = load_non_pile_dataset(dataset_name, data_scheme, model_size)
                 LOGGER.info(f"Calculating metrics for {split_name} on dataset {dataset_name}...")
-                run_pipeline(dataset, dataset_name, split_name, args.run_id, args.sample_size, args.sample_seed)
+                run_non_pile_pipeline(dataset, dataset_name, split_name, args.run_id, args.sample_size, args.sample_seed)
 
         # Reset before caching the next set of pre-computed features
         SPARK.catalog.clearCache()
