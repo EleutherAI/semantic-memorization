@@ -7,7 +7,8 @@ from .constants import PrecomputedFeatureName
 
 @PIPELINE_SINGLETON.register_filter()
 def token_frequency_statistics_filter(dataset: DataFrame, features: PrecomputedFeatures) -> DataFrame:
-    """Compute token frequency statistics of a list of token frequencies ordered by the token index (not ID) in the sequence.
+    """
+    Compute token frequency statistics of a list of token frequencies ordered by the token index (not ID) in the sequence.
 
     Statistics include:
         - `max_frequency`: maximum frequency of token frequencies in the sequence

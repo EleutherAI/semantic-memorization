@@ -1,13 +1,23 @@
+import re
+import unicodedata
+
 from pyspark.sql import DataFrame
 from pyspark.sql import functions as F
 from pyspark.sql import types as T
 
 from .base import PIPELINE_SINGLETON
-import unicodedata
-import re
 
 
 def replace_non_numeric_with_whitespace(text: str) -> str:
+    """
+    Replaces non-numeric characters with whitespace.
+
+    Args:
+        text (str): Sequence of tokens
+
+    Returns:
+        str: Sequence of tokens with non-numeric characters replaced with whitespace
+    """
     # Replace non-numeric characters with whitespace
     # cleaned_text = re.sub(r'[^0-9]', ' ', text)
     new_text = ""
@@ -48,6 +58,15 @@ def replace_non_numeric_with_whitespace(text: str) -> str:
 
 
 def incrementing_sequences_filter_wrapper(text: str) -> bool:
+    """
+    Returns if a sequence is incrementing.
+
+    Args:
+        text (str): Sequence of tokens
+
+    Returns:
+        bool: True if the sequence is incrementing, False otherwise
+    """
     # count number of numeric and non-numeric characters
     num_numeric = 0
     num_non_numeric = 0
@@ -317,7 +336,8 @@ def incrementing_sequences_filter_wrapper(text: str) -> bool:
 
 @PIPELINE_SINGLETON.register_filter()
 def incrementing_sequences_filter(dataset: DataFrame, _) -> DataFrame:
-    """Returns if a sequence is incrementing
+    """
+    Returns if a sequence is incrementing.
 
     Args:
         dataset (DataFrame): Dataset containing sequences of tokens
@@ -338,4 +358,4 @@ if __name__ == "__main__":
     samp = r"""
     "A.1 , A.2 , A.3 , A.4, B.1 , B.2, B.3, C.1"
     """
-    print(incrementing_sequences_filter(samp))
+    print(incrementing_sequences_filter_wrapper(samp))

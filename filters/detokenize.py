@@ -9,7 +9,8 @@ from transformers import AutoTokenizer
 
 @PIPELINE_SINGLETON.register_filter()
 def detokenize(dataset: DataFrame, _) -> DataFrame:
-    """Detokenizes tokens into text as a preprocessing step.
+    """
+    Detokenizes tokens into text as a preprocessing step.
 
     Args:
         dataset (DataFrame): Dataset containing sequences of tokens

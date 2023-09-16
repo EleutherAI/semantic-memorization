@@ -178,13 +178,13 @@ def load_non_pile_dataset(dataset_name: str, scheme: str, model_size: str) -> Da
     return SPARK.read.parquet(cache_path)
 
 
-def load_precomputed_features(schema: str, is_test=False) -> Dict[PrecomputedFeatureName, DataFrame]:
+def load_precomputed_features(scheme: str, is_test=False) -> Dict[PrecomputedFeatureName, DataFrame]:
     """
     Load the pre-computed features from HuggingFace datasets. If the features are not locally available, then
     download them from HuggingFace datasets and cache them as Spark DataFrames in Parquet format.
 
     Args:
-        schema (str): Data scheme used for Pythia model training.
+        scheme (str): Data scheme used for Pythia model training.
         is_test (bool): Load a sampled versions if required in case of testing
 
     Returns:
@@ -192,16 +192,16 @@ def load_precomputed_features(schema: str, is_test=False) -> Dict[PrecomputedFea
     """
     features = {}
     hf_dataset_names = [
-        (PrecomputedFeatureName.SEQUENCE_FREQUENCIES, f"usvsnsp/{schema}-num-duplicates", "train", {"Index": "sequence_id", "Counts": "frequency"}),
+        (PrecomputedFeatureName.SEQUENCE_FREQUENCIES, f"usvsnsp/{scheme}-num-duplicates", "train", {"Index": "sequence_id", "Counts": "frequency"}),
         (
             PrecomputedFeatureName.MEMORIZED_TOKEN_FREQUENCIES,
-            f"usvsnsp/{schema}-num-frequencies",
+            f"usvsnsp/{scheme}-num-frequencies",
             "memorized",
             {"TokenID": "token_id", "Frequency": "frequency"},
         ),
         (
             PrecomputedFeatureName.NON_MEMORIZED_TOKEN_FREQUENCIES,
-            f"usvsnsp/{schema}-num-frequencies",
+            f"usvsnsp/{scheme}-num-frequencies",
             "non_memorized",
             {"TokenID": "token_id", "Frequency": "frequency"},
         ),
@@ -241,6 +241,20 @@ def run_non_pile_pipeline(
     sample_size: Optional[int] = None,
     sample_seed: Optional[int] = None,
 ) -> None:
+    """
+    Run the pipeline for non-Pile datasets.
+
+    Args:
+        dataset (DataFrame): Spark DataFrame containing the dataset.
+        dataset_name (str): Name of the dataset.
+        split_name (str): Name of the split.
+        run_id (str): ID of the run.
+        sample_size (Optional[int]): Number of samples to take from the dataset.
+        sample_seed (Optional[int]): Seed to use for sampling the dataset.
+
+    Returns:
+        None
+    """
     if sample_size is not None:
         dataset = dataset.sample(1.0, seed=sample_seed).limit(sample_size)
 
@@ -262,6 +276,21 @@ def run_pile_pipeline(
     sample_size: Optional[int] = None,
     sample_seed: Optional[int] = None,
 ) -> None:
+    """
+    Run the pipeline for Pile datasets.
+
+    Args:
+        dataset (DataFrame): Spark DataFrame containing the dataset.
+        dataset_name (str): Name of the dataset.
+        data_scheme (str): Data scheme used for Pythia model training.
+        model_sizes (List[str]): List of Pythia model sizes.
+        run_id (str): ID of the run.
+        sample_size (Optional[int]): Number of samples to take from the dataset.
+        sample_seed (Optional[int]): Seed to use for sampling the dataset.
+
+    Returns:
+        None
+    """
     if sample_size is not None:
         dataset = dataset.sample(1.0, seed=sample_seed).limit(sample_size)
 

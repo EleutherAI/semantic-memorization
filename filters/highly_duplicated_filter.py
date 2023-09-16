@@ -7,11 +7,12 @@ from .constants import PrecomputedFeatureName
 
 @PIPELINE_SINGLETON.register_filter()
 def sequence_duplicates_filter(dataset: DataFrame, features: PrecomputedFeatures) -> DataFrame:
-    """Compute the number of duplicates (frequency) of a sequence.
+    """
+    Compute the number of duplicates (frequency) of a sequence.
 
     Args:
         dataset (DataFrame): Dataset containing sequences of tokens
-        features (PrecomputedFeatures):
+        features (PrecomputedFeatures): Precomputed features
 
     Returns:
         DataFrame: Dataframe with additional columns of `sequence_duplicates`, number of times that
