@@ -338,22 +338,8 @@ def main():
                 LOGGER.info(f"Calculating metrics for {data_scheme} on dataset {dataset_name}...")
                 run_pile_pipeline(dataset, dataset_name, data_scheme, model_sizes, args.run_id, args.sample_size, args.sample_seed)
 
-    for model_size in model_sizes:
-        for dataset_name in args.datasets if isinstance(args.datasets, list) else args.datasets.split(","):
-            is_test = dataset_name == "test"
-            for data_scheme in args.schemes if isinstance(args.schemes, list) else args.schemes.split(","):
-                LOGGER.info("Loading pre-computed features...")
-                precomputed_features = load_precomputed_features(data_scheme, is_test=is_test)
-                PIPELINE.register_features(precomputed_features)
-
-                split_name = f"{data_scheme}.{model_size}"
-                LOGGER.info(f"Loading dataset {dataset_name} and split {split_name}...")
-                dataset = load_non_pile_dataset(dataset_name, data_scheme, model_size)
-                LOGGER.info(f"Calculating metrics for {split_name} on dataset {dataset_name}...")
-                run_non_pile_pipeline(dataset, dataset_name, split_name, args.run_id, args.sample_size, args.sample_seed)
-
-        # Reset before caching the next set of pre-computed features
-        SPARK.catalog.clearCache()
+            # Reset before caching the next set of pre-computed features
+            SPARK.catalog.clearCache()
 
 
 if __name__ == "__main__":
