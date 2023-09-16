@@ -339,7 +339,7 @@ def main():
                 LOGGER.info(f"Calculating metrics for {data_scheme} on dataset {dataset_name}...")
                 run_pile_pipeline(dataset, dataset_name, data_scheme, model_sizes, args.run_id, args.sample_size, args.sample_seed)
 
-            # Reset before caching the next set of pre-computed features
+            # Clear the cache because pre-computed features are differentiated based on the data scheme
             SPARK.catalog.clearCache()
 
 
