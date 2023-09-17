@@ -24,7 +24,7 @@ def initialize_spark() -> SparkSession:
         .set("spark.sql.shuffle.partitions", f"{NUM_SPARK_PARTITIONS}")
         .set("spark.sql.execution.arrow.pyspark.enabled", "true")
         .set("spark.sql.execution.arrow.pyspark.fallback.enabled", "true")
-        .set("spark.driver.extraJavaOptions", "-XX:+UseG1GC")
+        .set("spark.sql.execution.arrow.maxRecordsPerBatch", "10000")
         .set("spark.memory.offHeap.enabled", "true")
         .set("spark.memory.offHeap.size", "16g")
         .set("spark.cleaner.referenceTracking.cleanCheckpoints", "true")

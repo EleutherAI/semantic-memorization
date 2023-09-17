@@ -152,7 +152,7 @@ def load_non_pile_dataset(dataset_name: str, scheme: str, model_size: str) -> Da
 
     if is_memorized:
         hf_dataset_name = f"EleutherAI/pythia-memorized-evals"
-    elif is_test:
+    else:
         hf_dataset_name = f"usvsnsp/pile-test-sampled"
 
     cache_name = hf_dataset_name if is_test else f"{hf_dataset_name}-{split_name}"
@@ -167,7 +167,7 @@ def load_non_pile_dataset(dataset_name: str, scheme: str, model_size: str) -> Da
         dataset = hf_load_dataset(hf_dataset_name, split=split_name).to_pandas().rename(columns={"index": "sequence_id"})
         dataset.tokens = dataset.tokens.map(lambda x: x.tolist())
         dataset = dataset[required_columns]
-    elif is_test:
+    else:
         dataset = hf_load_dataset(hf_dataset_name, split="train").to_pandas()
         dataset.tokens = dataset.tokens.map(lambda x: x.tolist())
 
@@ -190,8 +190,10 @@ def load_precomputed_features(scheme: str, is_test=False) -> Dict[PrecomputedFea
     Returns:
         Dict[PrecomputedFeatureName, DataFrame]: Dictionary of pre-computed features.
     """
+    num_test_rows = 3000
     features = {}
     hf_dataset_names = [
+        # (enum, hf_name, hf_split_name, column_mapping)
         (PrecomputedFeatureName.SEQUENCE_FREQUENCIES, f"usvsnsp/{scheme}-num-duplicates", "train", {"Index": "sequence_id", "Counts": "frequency"}),
         (
             PrecomputedFeatureName.MEMORIZED_TOKEN_FREQUENCIES,
@@ -205,13 +207,11 @@ def load_precomputed_features(scheme: str, is_test=False) -> Dict[PrecomputedFea
             "non_memorized",
             {"TokenID": "token_id", "Frequency": "frequency"},
         ),
+        (PrecomputedFeatureName.EMBEDDINGS, f"usvsnsp/{scheme}-embeddings", "train", {}),
     ]
 
     for enum, name, split, column_mapping in hf_dataset_names:
         cache_path = f"{SPARK_CACHE_DIR}/{name}-{split}"
-
-        # If we're testing, then control the number of rows to load
-        num_test_rows = 3000
         adjusted_split = f"{split}-test" if is_test else split
         adjusted_hf_split = f"{split}[:{num_test_rows}]" if is_test else split
         adjusted_cache_path = f"{cache_path}-test" if is_test else cache_path
@@ -223,6 +223,9 @@ def load_precomputed_features(scheme: str, is_test=False) -> Dict[PrecomputedFea
 
         LOGGER.info(f"Downloading dataset {name}-{adjusted_split}...")
         dataset = hf_load_dataset(name, split=adjusted_hf_split).to_pandas().rename(columns=column_mapping)
+
+        if enum == PrecomputedFeatureName.EMBEDDINGS:
+            dataset.embeddings = dataset.embeddings.map(lambda x: x.tolist())
 
         LOGGER.info(f"Converting and caching the dataset {name}-{adjusted_split} as Spark DataFrame {adjusted_cache_path}...")
         # Convert the Pandas DataFrame dataset to Spark DataFrame in Parquet
