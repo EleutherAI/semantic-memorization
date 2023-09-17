@@ -304,7 +304,7 @@ def run_pile_pipeline(
     for model_size in model_sizes:
         memorization_scores = main.select(
             "main.sequence_id",
-            F.col(f"main.{model_size}").alias("memorization_score"),
+            F.col(f"main.`{model_size}`").alias("memorization_score"),
         ).alias("score")
         joined_dataset = transformed_dataset.join(memorization_scores, on="sequence_id", how="left").select(
             "transformed.*",
