@@ -55,7 +55,7 @@ def parse_cli_args():
     )
 
     dataset_args_help = "The dataset in which to get inference responses for. Valid options are: memories, pile."
-    datasets_args_default = ["pile", "memories", "test"]
+    datasets_args_default = ["pile", "memories", "pile_test"]
     parser.add_argument(
         "--datasets",
         type=str,
@@ -147,7 +147,7 @@ def load_non_pile_dataset(dataset_name: str, scheme: str, model_size: str) -> Da
     """
     split_name = f"{scheme}.{model_size}"
     required_columns = ["sequence_id", "tokens"]
-    is_test = dataset_name == "test"
+    is_test = dataset_name == "pile_test"
     is_memorized = dataset_name == "memories"
 
     if is_memorized:
@@ -263,6 +263,7 @@ def run_non_pile_pipeline(
     transformed_dataset = transformed_dataset.withColumn("memorization_score", F.lit(1.0))
     LOGGER.info(f"Transformed Dataset {dataset_name}-{split_name} Schema:")
     transformed_dataset.printSchema()
+    LOGGER.info(f"{transformed_dataset.schema.simpleString()}")
     file_name = split_name.replace(".", "_", 1)
     transformed_dataset.coalesce(NUM_OUTPUT_PARTITIONS).write.parquet(f"datasets/{run_id}/{dataset_name}_{file_name}")
 
@@ -294,15 +295,16 @@ def run_pile_pipeline(
     if sample_size is not None:
         dataset = dataset.sample(1.0, seed=sample_seed).limit(sample_size)
 
-    no_scores = dataset.select("sequence_id", "tokens")
+    main = dataset.alias("main")
+    no_scores = main.select("sequence_id", "tokens")
     transformed_dataset = PIPELINE.transform(no_scores).alias("transformed")
 
     # Memorization score already exists per model size, we'll perform the join to export
     # each dataset by model size separately.
     for model_size in model_sizes:
-        memorization_scores = dataset.select(
-            "sequence_id",
-            F.col(model_size).alias("memorization_score"),
+        memorization_scores = main.select(
+            "main.sequence_id",
+            F.col(f"main.{model_size}").alias("memorization_score"),
         ).alias("score")
         joined_dataset = transformed_dataset.join(memorization_scores, on="sequence_id", how="left").select(
             "transformed.*",
@@ -311,6 +313,7 @@ def run_pile_pipeline(
         split_name = f"{data_scheme}.{model_size}"
         LOGGER.info(f"Transformed Dataset {dataset_name}-{split_name} Schema:")
         joined_dataset.printSchema()
+        LOGGER.info(f"{joined_dataset.schema.simpleString()}")
         file_name = split_name.replace(".", "_", 1)
         joined_dataset.coalesce(NUM_OUTPUT_PARTITIONS).write.parquet(f"datasets/{run_id}/{dataset_name}_{file_name}")
 
@@ -344,7 +347,7 @@ def main():
     data_schemes = args.schemes if isinstance(args.schemes, list) else args.schemes.split(",")
 
     for dataset_name in dataset_names:
-        is_test = dataset_name == "test"
+        is_test = dataset_name == "pile_test"
         is_memorized = dataset_name == "memories"
         is_pile = dataset_name == "pile"
 
@@ -353,7 +356,7 @@ def main():
             precomputed_features = load_precomputed_features(data_scheme, is_test=is_test)
             PIPELINE.register_features(precomputed_features)
 
-            if is_memorized:
+            if is_memorized or is_test:
                 # The memorized dataset has multiple splits by the model size
                 for model_size in model_sizes:
                     split_name = f"{data_scheme}.{model_size}"
