@@ -79,7 +79,7 @@ def break_and_compare_wrapper(ls: List, start_k: int, end_k: int) -> Union[Tuple
                     return result, i, k
             result = break_and_compare(ls[i:], k)
             if result:
-                return result, k
+                return result, i, k
         result = break_and_compare(ls, k)
         if result:
             return result, 0, k
@@ -108,10 +108,10 @@ def find_smallest_repeating_unit(lst) -> List:
 
             # Check if the entire list can be formed by repeating the unit
             if all(lst[i : i + unit_length] == unit for i in range(0, n, unit_length)):
-                return unit
+                return unit, n // unit_length
 
     # If no repeating unit is found, the list itself is the smallest repeating unit
-    return lst
+    return lst, 1
 
 
 @PIPELINE_SINGLETON.register_filter()
@@ -128,34 +128,45 @@ def highly_repetitive_filter(dataset: DataFrame, _) -> DataFrame:
         - `smallest_repeating_chunk`: Smallest repeating token sequence
 
     Returns:
-        DataFrame: with additional column of `is_incrementing`
+        DataFrame: with additional columns
+            `repeating_chunk`: Repeating Chunk
+            `num_repeating`: Number of times the chunk is repeating
+            `repeating_offset`: Offset of repeating sequence
     """
     main = dataset.alias("main")
     repetitive_schema = T.StructType(
         [
-            T.StructField("num_repeating", T.IntegerType()),
-            T.StructField("repeating_offset", T.IntegerType()),
             T.StructField("repeating_chunk", T.ArrayType(T.LongType())),
+            T.StructField("repeating_offset", T.IntegerType()),
+            T.StructField("num_repeating", T.IntegerType())
         ]
     )
 
     start_k = 2
     end_k = 5
     repetitiveUDF = F.udf(lambda seq: break_and_compare_wrapper(seq, start_k, end_k), repetitive_schema)
-    smallest_repeating_chunkUDF = F.udf(lambda seq: find_smallest_repeating_unit(seq), T.ArrayType(T.LongType()))
 
-    repetitive_counts = main.select("sequence_id", "text").withColumn("repetitive", repetitiveUDF("text"))
-    repetitive_counts = repetitive_counts.withColumn("smallest_repeating_chunk", smallest_repeating_chunkUDF("repetitive.repeating_chunk"))
+    smallest_repeating_chunk_schema = T.StructType(
+        [
+            T.StructField("smallest_repeating_chunk", T.ArrayType(T.LongType())),
+            T.StructField("num_times", T.IntegerType())
+        ]
+    )
+    smallest_repeating_chunkUDF = F.udf(lambda seq: find_smallest_repeating_unit(seq), smallest_repeating_chunk_schema)
+
+    repetitive_counts = main.select("sequence_id", "tokens").withColumn("repetitive", repetitiveUDF("tokens"))
+    repetitive_counts = repetitive_counts.withColumn("smallest_repeating", smallest_repeating_chunkUDF("repetitive.repeating_chunk"))
 
     final = (
         main.join(repetitive_counts, on="sequence_id", how="left")
         .drop(repetitive_counts.sequence_id)
-        .drop(repetitive_counts.text)
+        .drop(repetitive_counts.tokens)
         .drop(repetitive_counts.repetitive.repeating_chunk)
         .select(
             "main.*",
-            "repetitive.*",
-            "smallest_repeating_chunk",
+            F.col("repetitive.repeating_offset").alias("repeating_offset"),
+            (F.col("repetitive.num_repeating")*F.col("smallest_repeating.num_times")).alias("num_repeating"),
+            F.col("smallest_repeating.smallest_repeating_chunk").alias("smallest_repeating_chunk")
         )
     )
 
