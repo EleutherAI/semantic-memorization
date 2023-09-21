@@ -6,6 +6,7 @@ torch
 torchvision
 torchaudio
 transformers
+tqdm
 accelerate
 datasets
 tqdm
@@ -15,3 +16,6 @@ pytest
 findspark==2.0.1
 pyspark==3.4.1
 flake8
+matplotlib
+seaborn
+xicorpy
