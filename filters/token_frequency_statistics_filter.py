@@ -7,7 +7,8 @@ from .constants import PrecomputedFeatureName
 
 @PIPELINE_SINGLETON.register_filter()
 def token_frequency_statistics_filter(dataset: DataFrame, features: PrecomputedFeatures) -> DataFrame:
-    """Compute token frequency statistics of a list of token frequencies ordered by the token index (not ID) in the sequence.
+    """
+    Compute token frequency statistics of a list of token frequencies ordered by the token index (not ID) in the sequence.
 
     Statistics include:
         - `max_frequency`: maximum frequency of token frequencies in the sequence
@@ -28,8 +29,7 @@ def token_frequency_statistics_filter(dataset: DataFrame, features: PrecomputedF
     memorized_frequencies = features[PrecomputedFeatureName.MEMORIZED_TOKEN_FREQUENCIES].alias("memorized")
     non_memorized_frequencies = features[PrecomputedFeatureName.NON_MEMORIZED_TOKEN_FREQUENCIES].alias("non_memorized")
 
-    # First, we expand the token indices, then join to extract the frequencies
-    # Note that we dropped the memorization score, we'll re-join it later.
+    # First, we expand the token indices, then join to extract the frequencies.
     flattened_main = main.select("sequence_id", F.posexplode("tokens").alias("token_index", "token_id"))
     token_frequencies = (
         flattened_main.join(memorized_frequencies, on="token_id", how="left")
@@ -69,6 +69,6 @@ def token_frequency_statistics_filter(dataset: DataFrame, features: PrecomputedF
         F.transform(F.col("frequencies"), lambda x: x.frequency).alias("frequencies"),
     ).alias("filtered")
 
-    # Finally, re-attach the memorization score from the original dataset
-    final = filtered_frequencies.join(main, on="sequence_id", how="left").drop(filtered_frequencies.sequence_id).select("main.*", "filtered.*")
+    final = main.join(filtered_frequencies, on="sequence_id", how="left").drop(filtered_frequencies.sequence_id).select("main.*", "filtered.*")
+
     return final
