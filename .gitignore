@@ -446,3 +446,6 @@ spark_cache/
 
 # datasets
 datasets/
+
+# Any generated output files
+*.out
