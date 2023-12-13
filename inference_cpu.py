@@ -50,21 +50,18 @@ def load_tokenizer(split_name: str) -> AutoTokenizer:
     return tokenizer
 
 
-def load_model(split_name, checkpoint, cache_dir = None, device = "cuda:0"):
+def load_model(split_name, cache_dir = None, device = "cuda:0"):
     """Get the HuggingFace model for the current model
     
     Args:
         split_name (str): The model+scheme used to determine the tokenizer and model
-        checkpoint (str): The checkpoint to load
         cache_dir (str): Path to use as cache for loading pretrained model
         device (torch.device (or) str): Pytorch device to load the model into
     """
     isDeduped = split_name.startswith("deduped")
     model = split_name.split("duped.")[-1]
     corresponding_model = f"EleutherAI/pythia-{model}{'-deduped' if isDeduped else ''}"
-    model =  GPTNeoXForCausalLM.from_pretrained(corresponding_model, revision = f"step{checkpoint}",cache_dir = cache_dir)
-    model = model.half().to(device)
-    return model
+    return GPTNeoXForCausalLM.from_pretrained(corresponding_model, cache_dir = cache_dir).half().to(device)
 
 
 def calculate_perplexity(logits: torch.Tensor, labels: torch.Tensor) -> torch.float64:
@@ -139,7 +136,7 @@ def get_batch_size(model_name: str) -> int:
         int: The batch size to use for inference
     """
     size_batch_map = {
-        "70m": 256,
+        "70m": 512,
         "160m": 256,
         "410m": 256,
         "1b": 128,
@@ -169,7 +166,7 @@ def get_dataset(dataset_name: str, split_name: str, sample: int = None) -> pd.Da
         scheme = split_name.split(".")[0]
         pile_path = f"EleutherAI/pile-{scheme}-pythia-random-sampled"
         dataset = load_dataset(pile_path, split="train").to_pandas()[["Index", "Tokens"]]
-    elif dataset_name == "memories":
+    elif dataset_name == "memorized":
         dataset = load_dataset("EleutherAI/pythia-memorized-evals")[split_name].to_pandas()
     else:
         dataset = load_dataset("usvsnsp/pile-test-sampled", split = "train").to_pandas().rename({
@@ -178,6 +175,7 @@ def get_dataset(dataset_name: str, split_name: str, sample: int = None) -> pd.Da
         }, axis = 1)
         dataset = dataset[["Index", "Tokens"]]
     return dataset if sample is None else dataset.sample(sample).reset_index(drop=True)
+
 
 
 
@@ -191,14 +189,7 @@ def init_distributed(rank: int, world_size: int):
     dist.init_process_group(backend = "nccl", rank = rank, world_size = world_size)
     torch.cuda.set_device(rank)
 
-def run_model_inferences(rank, world_size, 
-    split_name: str, 
-    checkpoint: str,
-    run_id: str, dataset: 
-    str, features: list, 
-    batch_size: int, 
-    sample_size: int = None
-):
+def run_model_inferences(rank, world_size, split_name: str, run_id: str, dataset: str, features: list, batch_size: int, sample_size: int = None):
     """
     Run inference for the given model and dataset. Save the results to a CSV file.
 
@@ -206,7 +197,6 @@ def run_model_inferences(rank, world_size,
         rank (int): Rank of Current Process 
         world_size (int): World Size of Current run
         split_name (str): The model+scheme used to determine the tokenizer and model
-        checkpoint (str): The checkpoint to load
         run_id (str): The timestamp for this run
         dataset (str): The dataset to run inference on
         sample_size (int, optional): The maximum number of random samples run inference on. Defaults to None.
@@ -214,12 +204,10 @@ def run_model_inferences(rank, world_size,
     tokenizer = load_tokenizer(split_name)
     pythia_model = load_model(
         split_name, 
-        checkpoint,
         cache_dir = '/fsx/orz/models', 
         device = torch.cuda.current_device()
     )
     pile_sequences = get_dataset(dataset, split_name, sample=sample_size)
-    print(f"Dataset size: {len(pile_sequences)}")
     
 
     num_processes = multiprocessing.cpu_count()
@@ -243,12 +231,12 @@ def run_model_inferences(rank, world_size,
                 outputs = pythia_model(
                     input_ids = tokenized_batch,
                     labels = tokenized_batch,
-                    output_attentions = True
+                    output_attentions=True,
                 )
-                logits = outputs.logits.detach().double()
-                labels = tokenized_batch.detach()
-                loss = outputs.loss.detach().double()
-                attentions = [attn_tensor.detach().double() for attn_tensor in outputs.attentions]
+                logits = outputs.logits.detach().cpu().double()
+                labels = tokenized_batch.detach().cpu()
+                loss = outputs.loss.detach().cpu().double()
+                attentions = [attn_tensor.detach().cpu().double() for attn_tensor in outputs.attentions]
                 inference_logs = accumilate_inference_log(batch[0], labels, logits, loss, attentions, features, pool)
                 if rank == 0:
                     all_inference_logs = [[] for i in range(world_size)]
@@ -258,22 +246,21 @@ def run_model_inferences(rank, world_size,
                 dist.gather_object(inference_logs, all_inference_logs)
                 if rank == 0:
                     for inference_logs in all_inference_logs:
-                        save_inference_log(split_name, run_id, inference_logs, dataset, checkpoint)
+                        save_inference_log(split_name, run_id, inference_logs, dataset)
                 
 
-@torch.jit.script
+
 def gini(array):
     """Calculate the Gini coefficient of a numpy array. Ref: https://github.com/oliviaguest/gini"""
     # based on bottom eq: http://www.statsdirect.com/help/content/image/stat0206_wmf.gif
     # from: http://www.statsdirect.com/help/default.htm#nonparametric_methods/gini.htm
-    arg_min = torch.amin(array, -1, keepdim = True)
-    arg_min = (arg_min < 0)*arg_min
-    array -= arg_min
-    array, _ = torch.sort(array)
-    index = torch.arange(1,array.shape[-1]+1, device = 'cuda')
-    n = array.shape[-1]
-    mul = (2 * index - n  - 1) * array
-    ans = ((torch.sum(mul, dim = [-1, -2])) / (n * torch.sum(array, dim = [-1, -2])))
+    arg_min = np.amin(array)
+    if arg_min < 0:
+        array -= arg_min
+    array = np.sort(array)
+    index = np.arange(1,array.shape[0]+1)
+    n = array.shape[0]
+    ans = ((np.sum((2 * index - n  - 1) * array)) / (n * np.sum(array)))
     return ans
 
 
@@ -291,24 +278,23 @@ def accumilate_inference_log(
     """
     inference_logs = []
     perplexities = [calculate_perplexity(logits[i], labels[i]) for i in range(len(logits))] if "ppl" in features else None
-
     # perplexities = pool.starmap(calculate_perplexity, zip(logits, labels))
     e = 1e-8
 
     method_args = []
-    inference_logs = []
     for index, id_tensor in enumerate(batch_sequence_ids):
-        inference_logs.append(get_inference_log(labels, loss, attentions, features, perplexities, e, index, id_tensor))
+        method_args.append((labels, loss, attentions, features, perplexities, e, index, id_tensor))
 
+    inference_logs = pool.starmap(get_inference_log, method_args)
+    del method_args
     return inference_logs
-
 
 def get_inference_log(labels, loss, attentions, features, perplexities, e, index, id_tensor):
     total_entropy = []
     total_gini = []
-    inference_log = {"index": id_tensor.cpu().item()}
+    inference_log = {"index": id_tensor.item()}
     if "loss" in features:
-        inference_log["loss"] = loss.cpu().item()
+        inference_log["loss"] = loss.item()
     if "attn" in features:
         for layer_index, attention_layer in enumerate(attentions):
             get_layer_entropy(e, index, total_entropy, total_gini, inference_log, layer_index, attention_layer)
@@ -326,20 +312,27 @@ def get_inference_log(labels, loss, attentions, features, perplexities, e, index
 
 
 def get_layer_entropy(e, index, total_entropy, total_gini, inference_log, layer_index, attention_layer):
-    sequence_attention = attention_layer[index] + e #adding 'e' to attention weights that are 0 to avoid log zero error while calculating entropy. Entropy = - ∑(w * log(w))
+    sequence_attention = attention_layer[index].detach()
+    head_e = []
+    gini_head = []
 
-    gini_coefficients = gini(sequence_attention)
-    head_entropies = -torch.sum(sequence_attention * torch.log(sequence_attention), dim = [-1, -2])
+    for head_index, head in enumerate(sequence_attention):
+        attention_head = head.numpy()
+        attention_head += e #adding 'e' to attention weights that are 0 to avoid log zero error while calculating entropy. Entropy = - ∑(w * log(w))
+        gini_coefficient = gini(attention_head)
+        gini_head.append(gini_coefficient)
+        head_entropy = -np.sum(attention_head * np.log(attention_head))
+        head_e.append(head_entropy)
+        inference_log[f"gini_head{head_index+1}_layer{layer_index+1}"] = gini_coefficient
+        inference_log[f"entropy_head{head_index+1}_layer{layer_index+1}"] = head_entropy
 
-    avg_head_gini = torch.mean(gini_coefficients)
-    avg_head = torch.mean(head_entropies)
-    inference_log[f'gini_heads_layer{layer_index+1}'] = gini_coefficients.data.cpu().numpy()
-    inference_log[f'entropy_heads_layer{layer_index+1}'] = head_entropies.data.cpu().numpy()
-    total_entropy.append(avg_head.cpu().item())
-    total_gini.append(avg_head_gini.cpu().item())
+    avg_head = np.mean(head_e)
+    avg_head_gini = np.mean(gini_head)
+    total_entropy.append(avg_head)
+    total_gini.append(avg_head_gini)
 
 
-def save_inference_log(split_name: str, run_id: str, inference_logs: list, dataset: str, checkpoint: str):
+def save_inference_log(split_name: str, run_id: str, inference_logs: list, dataset: str):
     """Saves the accumilated inference log in a pandas dataframe
 
     Args:
@@ -347,30 +340,20 @@ def save_inference_log(split_name: str, run_id: str, inference_logs: list, datas
         run_id (str): The timestamp for this run
         inference_logs (list): Accumilated inference logs
         dataset (str): Name of dataset
-        checkpoint (str): Name of the checkpoint being evaluated
     """
     file_name = split_name.replace(".", "_")
     inference_logs_df = pd.DataFrame(inference_logs)
-    inference_logs_df.to_csv(f"datasets/{run_id}/{dataset}_{file_name}_{checkpoint}.csv", index=False, mode = 'a')
+    inference_logs_df.to_csv(f"datasets/{run_id}/{dataset}_{file_name}.csv", index=False, mode="a")
 
 def parse_cli_args():
     parser = ArgumentParser()
-    models_arg_help = "The Pythia model to get the inferences for. Valid options are: 70m, 160m, 410m, 1b, 1.4b, 2.8b, 6.9b, 12b"
+    models_arg_help = "The Pythia model to get the perplexities for. Valid options are: 70m, 160m, 410m, 1b, 1.4b, 2.8b, 6.9b, 12b"
     models_args_default = ["70m", "160m", "410m", "1b", "1.4b", "2.8b", "6.9b", "12b"]
     parser.add_argument(
         "--models",
         type=str,
         help=models_arg_help,
         default=models_args_default,
-    )
-
-    checkpoint_arg_help = "The Pythia checkpoint to get inferences for. Valid options are 1000, 2000, ... 143000 and 1, 2, ... 512"
-    checkpoint_arg_default = "143000"
-    parser.add_argument(
-        "--checkpoint",
-        type=str,
-        help=checkpoint_arg_help,
-        default=checkpoint_arg_default
     )
 
     schemes_args_help = "The data scheme to get the perplexities for. Valid options are: deduped, duped"
@@ -394,10 +377,10 @@ def parse_cli_args():
     )
 
     features_arg_help = "The features to extract from the model response. Valid options are: attn, loss, perplexity"
-    features_arg_default = ["loss", "ppl", "attn"]
+    features_arg_default = ["attn", "loss", "ppl"]
     parser.add_argument(
         "--features",
-        type=list,
+        type=str,
         help=features_arg_help,
         choices=features_arg_default,
         default=features_arg_default,
@@ -425,28 +408,24 @@ def main():
     experiment_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     os.makedirs(f"./datasets/{experiment_timestamp}", exist_ok=True)
 
-    if rank == 0:
-        print("---------------------------------------------------------------------------")
-        print("Starting inference run with the following parameters:")
-        print(f"Timestamp: {experiment_timestamp}")
-        print(f"Models: {args.models}")
-        print(f"Schemes: {args.schemes}")
-        print(f"Datasets: {args.datasets}")
-        print(f"Features: {args.features}")
-        print(f"Checkpoint: {args.checkpoint}")
-        if args.sample_size is not None:
-            print(f"Sample size: {args.sample_size}")
-        print("---------------------------------------------------------------------------")
+    print("---------------------------------------------------------------------------")
+    print("Starting inference run with the following parameters:")
+    print(f"Timestamp: {experiment_timestamp}")
+    print(f"Models: {args.models}")
+    print(f"Schemes: {args.schemes}")
+    print(f"Datasets: {args.datasets}")
+    print(f"Features: {args.features}")
+    if args.sample_size is not None:
+        print(f"Sample size: {args.sample_size}")
+    print("---------------------------------------------------------------------------")
 
     for model_size in args.models if isinstance(args.models, list) else args.models.split(","):
         for data_scheme in args.schemes if isinstance(args.schemes, list) else args.schemes.split(","):
             for dataset in args.datasets if isinstance(args.datasets, list) else args.datasets.split(","):
                 split_name = f"{data_scheme}.{model_size}"
-                dist.barrier()
-                if rank == 0:
-                    print(f"Collecting inferences for {split_name} on {dataset} dataset")
+                print(f"Collecting inferences for {split_name} on {dataset} dataset")
                 batch_size = args.batch_size if args.batch_size is not None else get_batch_size(model_size)
-                run_model_inferences(rank, world_size, split_name, args.checkpoint, experiment_timestamp, dataset, args.features, batch_size, args.sample_size)
+                run_model_inferences(rank, world_size, split_name, experiment_timestamp, dataset, args.features, batch_size, args.sample_size)
 
 
 if __name__ == "__main__":
