@@ -13,6 +13,7 @@ import random
 import string
 import time
 import os
+import gc
 import logging
 import pickle
 
@@ -23,8 +24,8 @@ def iterate(args):
     num_records = args.save_every*1024
     if args.total_iters % args.save_every != 0:
         raise ValueError((
-            "Make sure your arguments for both `calculate_duplicates`"
-            "and `combine_duplicates` are the same"
+            "Make sure that arguments of `total_iters` and `save_every` are same`"
+            "across all executed files"
         ))
         
     total_files = args.total_iters // args.save_every
@@ -34,7 +35,8 @@ def iterate(args):
             "Make sure that the number of processes are divisible "
             f"by the files generated, {total_files}"))
     
-    hash_path = os.path.join(args.temp_local_folder, args.dataset_type + ".pkl")
+    # hash_path = os.path.join(args.temp_local_folder, args.dataset_type + ".pkl")
+    hash_path = f"/admin/home-orz/{args.dataset_type}/{args.dataset_type}.pkl"
     with open(hash_path, "rb") as fp:
         all_hashes = pickle.load(fp)
     
@@ -54,14 +56,19 @@ def iterate(args):
             }
         )
         df = df[df["Hash"].apply(lambda x: x in all_hashes)]
-        df.to_hdf(os.path.join(args.temp_local_folder, f"{args.dataset_type}_{part}.hdf"),
-            index = False, 
-            key = "memorization"
+        save_path = os.path.join(args.temp_local_folder, f"{args.dataset_type}_{part}.npz")
+        np.savez(
+            save_path,
+            index = df['Index'].to_numpy().astype(np.uint32),
+            offset = df['Offset'].to_numpy().astype(np.uint16),
+            hash = df['Hash'].to_numpy().astype(np.uint64),
         )
         args.comm.Barrier()
     
 
 if __name__ == '__main__':
+    NGRAMS = 32
+    DS_TYPE = "standard"
     parser = argparse.ArgumentParser(
         prog = 'Calculate Duplicates in a large dataset',
         description = 'Calculates 64-gram duplicates in ~billion token large datasets.'
@@ -73,12 +80,12 @@ if __name__ == '__main__':
     )
     parser.add_argument(
         '--cache_key',
-        default = 'orz/semantic-memorization-duplicates/standard',
+        default = f'orz/pile_{NGRAMS}_gram_hashes/{DS_TYPE}',
         help = 'Key to an empty file. Will be used as cache for saving semi-processed data'
     )
     parser.add_argument(
         '--pile_key',
-        default = 'orz/pile/standard/document.bin',
+        default = f'orz/pile/{DS_TYPE}/document.bin',
         help = 'Key to the location of preshuffled MemMapped dataset bin file'
     )
     parser.add_argument(
@@ -96,8 +103,14 @@ if __name__ == '__main__':
     )
     parser.add_argument(
         '--temp_local_folder',
-        default = '/fsx/orz/temp/',
+        default = f'/fsx/orz/temp/{DS_TYPE}' ,
         help = 'Temporary cache folder to help upload parts to s3'
+    )
+    parser.add_argument(
+        '--ngrams',
+        default = NGRAMS,
+        type = int,
+        help = 'Ngrams to calculate duplicates out of'
     )
 
     logging.getLogger('boto3').setLevel(logging.DEBUG)
@@ -109,12 +122,19 @@ if __name__ == '__main__':
     args = parser.parse_args()
     args.comm = MPI.COMM_WORLD
     args.rank = args.comm.Get_rank()
+    args.world_size = args.comm.Get_size()
     if args.rank == 0:
         print("*"*10 + "INPUT CONFIG:" + "*"*10)
         for arg in vars(args):
             print(arg, getattr(args, arg))
         print("*"*28)
-    args.world_size = args.comm.Get_size()
+        os.makedirs(args.temp_local_folder, exist_ok = True)
+        for file_name in os.listdir(args.temp_local_folder):
+            if file_name.endswith(".pkl"):
+                continue
+            os.remove(os.path.join(args.temp_local_folder, file_name))
+
+    
     random_str = ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(20))
     args.temp_local_file = os.path.join(args.temp_local_folder, f'{random_str}_{args.rank}')
     args.dataset_type = args.pile_key.split("/")[-2]
@@ -126,27 +146,29 @@ if __name__ == '__main__':
     # Barrier
     args.comm.Barrier()
     iterate(args)
+    gc.collect()
     
     if args.rank == 0:
         merged_dataset = []
         total_files = args.total_iters // args.save_every
-        for part in range(1, total_files + 1):
-            part_path = os.path.join(args.temp_local_folder, f'{args.dataset_type}_{part}.hdf')
-            df = pd.read_hdf(part_path, key = 'memorization')
-            merged_dataset.append(df)
+        indicies = []
+        hashes = []
+        offsets = []
+        for part in tqdm(range(1, total_files + 1)):
+            part_path = os.path.join(args.temp_local_folder, f"{args.dataset_type}_{part}.npz")
+            df = np.load(part_path)
+            indicies.append(df['index'])
+            hashes.append(df['hash'])
+            offsets.append(df['offset'])
             os.remove(part_path)
 
         os.makedirs("results", exist_ok = True)
-        merged_dataset = pd.concat(merged_dataset)
-        merged_dataset.to_parquet(f'results/{args.dataset_type}.parquet')
-        zero_offsets = merged_dataset[merged_dataset['Offset'] == 0]
-        approx_num_duplicates = merged_dataset["Hash"].value_counts().reset_index()
-        approx_num_duplicates = approx_num_duplicates[approx_num_duplicates['count'] > 1]
-
-        all_hashes = {}
-        for df in tqdm(approx_num_duplicates.itertuples(), total = len(approx_num_duplicates)):
-            all_hashes[df.Hash] = df.count
-        
-        zero_offsets['count'] = zero_offsets['Hash'].progress_map(lambda x:all_hashes[x] 
-                                                                    if x in all_hashes else 1)
-        zero_offsets.to_parquet(f"results/{args.dataset_type}_counts.parquet", index = False)
+        indicies = np.concatenate(indicies)
+        hashes = np.concatenate(hashes)
+        offsets = np.concatenate(offsets)
+        np.savez(
+            f'results/{args.dataset_type}.npz',
+            index = indicies,
+            hash = hashes,
+            offset = offsets
+        )
