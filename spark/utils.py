@@ -2,7 +2,7 @@ import findspark
 from pyspark.conf import SparkConf
 from pyspark.sql import SparkSession
 
-from spark.constants import NUM_CPU_COUNT, NUM_SPARK_PARTITIONS, SPARK_CACHE_DIR
+from spark.constants import *
 
 
 def initialize_spark() -> SparkSession:
@@ -19,14 +19,14 @@ def initialize_spark() -> SparkSession:
         .setMaster("local[*]")
         .setAppName("semantic-memorization")
         .set("spark.driver.cores", f"{NUM_CPU_COUNT}")
-        .set("spark.driver.memory", "80g")
-        .set("spark.driver.memoryOverhead", "16g")
+        .set("spark.driver.memory", f"{MEMORY_SIZE}")
+        .set("spark.driver.memoryOverhead", f"{HEAP_SIZE}")
         .set("spark.sql.shuffle.partitions", f"{NUM_SPARK_PARTITIONS}")
         .set("spark.sql.execution.arrow.pyspark.enabled", "true")
         .set("spark.sql.execution.arrow.pyspark.fallback.enabled", "true")
         .set("spark.sql.execution.arrow.maxRecordsPerBatch", "10000")
         .set("spark.memory.offHeap.enabled", "true")
-        .set("spark.memory.offHeap.size", "16g")
+        .set("spark.memory.offHeap.size", f"{HEAP_SIZE}")
         .set("spark.cleaner.referenceTracking.cleanCheckpoints", "true")
     )
     session = SparkSession.builder.config(conf=config).getOrCreate()

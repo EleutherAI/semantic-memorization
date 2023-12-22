@@ -13,6 +13,7 @@ from filters import PIPELINE
 from filters.constants import PrecomputedFeatureName
 from spark.constants import NUM_SPARK_PARTITIONS, NUM_OUTPUT_PARTITIONS, SPARK_CACHE_DIR
 from spark.utils import initialize_spark
+import numpy as np
 
 LOGGER: logging.Logger = initialize_logger()
 SPARK: SparkSession = initialize_spark()
@@ -83,13 +84,14 @@ def parse_cli_args():
     return parser.parse_args()
 
 
-def load_pile_dataset(scheme: str) -> DataFrame:
+def load_pile_dataset(scheme: str, generations_only:bool = False) -> DataFrame:
     """
     Load the Pile dataset from HuggingFace. If the dataset is not locally available, then
     download it from HuggingFace datasets and cache it as a Spark DataFrame in Parquet format.
 
     Args:
         scheme (str): Data scheme used for Pythia model training.
+        generations_only (bool): (Hack as of now) only evaluate on last 32 tokens
 
     Returns:
         DataFrame: Spark DataFrame containing the dataset.
@@ -125,6 +127,9 @@ def load_pile_dataset(scheme: str) -> DataFrame:
     )
     dataset.tokens = dataset.tokens.map(lambda x: x.tolist())
 
+    if generations_only:
+        dataset.tokens = dataset.tokens.map(lambda x:x[-32:])
+
     LOGGER.info(f"Converting and caching the dataset {hf_dataset_name} as Spark DataFrame in {cache_path}...")
     # Convert the Pandas DataFrame dataset to Spark DataFrame in Parquet
     SPARK.createDataFrame(dataset).repartition(NUM_SPARK_PARTITIONS).write.parquet(cache_path)
@@ -132,7 +137,12 @@ def load_pile_dataset(scheme: str) -> DataFrame:
     return SPARK.read.parquet(cache_path)
 
 
-def load_non_pile_dataset(dataset_name: str, scheme: str, model_size: str) -> DataFrame:
+def load_non_pile_dataset(
+    dataset_name: str, 
+    scheme: str, 
+    model_size: str,
+    generations_only:bool = False,
+) -> DataFrame:
     """
     Load the non-Pile dataset from HuggingFace. If the dataset is not locally available, then
     download it from HuggingFace datasets and cache it as a Spark DataFrame in Parquet format.
@@ -141,6 +151,7 @@ def load_non_pile_dataset(dataset_name: str, scheme: str, model_size: str) -> Da
         dataset_name (str): Name of the dataset to download.
         scheme (str): Data scheme used for Pythia model training.
         model_size (str): Pythia model size.
+        generations_only (bool): (Hack as of now) only evaluate on last 32 tokens
 
     Returns:
         DataFrame: Spark DataFrame containing the dataset.
@@ -171,6 +182,9 @@ def load_non_pile_dataset(dataset_name: str, scheme: str, model_size: str) -> Da
         dataset = hf_load_dataset(hf_dataset_name, split="train").to_pandas()
         dataset.tokens = dataset.tokens.map(lambda x: x.tolist())
 
+    if generations_only:
+        dataset.tokens = dataset.tokens.map(lambda x:x[-32:])
+
     LOGGER.info(f"Converting and caching the dataset {hf_dataset_name} as Spark DataFrame in {cache_path}...")
     # Convert the Pandas DataFrame dataset to Spark DataFrame in Parquet
     SPARK.createDataFrame(dataset).repartition(NUM_SPARK_PARTITIONS).write.parquet(cache_path)
@@ -178,7 +192,12 @@ def load_non_pile_dataset(dataset_name: str, scheme: str, model_size: str) -> Da
     return SPARK.read.parquet(cache_path)
 
 
-def load_precomputed_features(scheme: str, is_test=False) -> Dict[PrecomputedFeatureName, DataFrame]:
+def load_precomputed_features(
+    scheme: str, 
+    model_name: str,
+    is_test=False, 
+    is_memorized=False, 
+) -> Dict[PrecomputedFeatureName, DataFrame]:
     """
     Load the pre-computed features from HuggingFace datasets. If the features are not locally available, then
     download them from HuggingFace datasets and cache them as Spark DataFrames in Parquet format.
@@ -186,6 +205,8 @@ def load_precomputed_features(scheme: str, is_test=False) -> Dict[PrecomputedFea
     Args:
         scheme (str): Data scheme used for Pythia model training.
         is_test (bool): Load a sampled versions if required in case of testing
+        is_memorized (bool): Check if the current split is memories and load appropriately
+        model_name (str): Name of model split being loaded
 
     Returns:
         Dict[PrecomputedFeatureName, DataFrame]: Dictionary of pre-computed features.
@@ -194,7 +215,7 @@ def load_precomputed_features(scheme: str, is_test=False) -> Dict[PrecomputedFea
     features = {}
     hf_dataset_names = [
         # (enum, hf_name, hf_split_name, column_mapping)
-        (PrecomputedFeatureName.SEQUENCE_FREQUENCIES, f"usvsnsp/{scheme}-num-duplicates", "train", {"Index": "sequence_id", "Counts": "frequency"}),
+        (PrecomputedFeatureName.SEQUENCE_FREQUENCIES, f"usvsnsp/generation-num-duplicates", scheme, {"counts": "frequency"}),
         (
             PrecomputedFeatureName.MEMORIZED_TOKEN_FREQUENCIES,
             f"usvsnsp/{scheme}-num-frequencies",
@@ -207,8 +228,45 @@ def load_precomputed_features(scheme: str, is_test=False) -> Dict[PrecomputedFea
             "non_memorized",
             {"TokenID": "token_id", "Frequency": "frequency"},
         ),
-        (PrecomputedFeatureName.EMBEDDINGS, f"usvsnsp/{scheme}-embeddings", "train", {}),
+        (
+            PrecomputedFeatureName.IS_CODE, 
+            f"usvsnsp/pile-pythia-code-vs-nl-scores", 
+            "standard" if scheme == "duped" else "deduped", 
+            {}
+        )
     ]
+
+    semantic_duplicates_map = {
+        "index": "sequence_id", 
+        "0.8_frequencies": "0_8_frequencies", 
+        "0.9_frequencies": "0_9_frequencies"
+    }
+    if not is_memorized:
+        hf_dataset_names.append((
+            PrecomputedFeatureName.SEMANTIC_SNOWCLONES,
+            f"usvsnsp/semantic-duplicates",
+            f"{scheme}_snowclones",
+            semantic_duplicates_map
+        ))
+        hf_dataset_names.append((
+            PrecomputedFeatureName.SEMANTIC_TEMPLATES,
+            f"usvsnsp/semantic-duplicates",
+            f"{scheme}_templates",
+            semantic_duplicates_map
+        ))
+    else:
+        hf_dataset_names.append((
+            PrecomputedFeatureName.SEMANTIC_SNOWCLONES,
+            f"usvsnsp/semantic-duplicates",
+            f"{scheme}_{model_name}_snowclones",
+            semantic_duplicates_map
+        ))
+        hf_dataset_names.append((
+            PrecomputedFeatureName.SEMANTIC_TEMPLATES,
+            f"usvsnsp/semantic-duplicates",
+            f"{scheme}_{model_name}_templates",
+            semantic_duplicates_map
+        ))
 
     for enum, name, split, column_mapping in hf_dataset_names:
         cache_path = f"{SPARK_CACHE_DIR}/{name}-{split}"
@@ -223,9 +281,10 @@ def load_precomputed_features(scheme: str, is_test=False) -> Dict[PrecomputedFea
 
         LOGGER.info(f"Downloading dataset {name}-{adjusted_split}...")
         dataset = hf_load_dataset(name, split=adjusted_hf_split).to_pandas().rename(columns=column_mapping)
-
-        if enum == PrecomputedFeatureName.EMBEDDINGS:
-            dataset.embeddings = dataset.embeddings.map(lambda x: x.tolist())
+        
+        if enum == PrecomputedFeatureName.SEQUENCE_FREQUENCIES:
+            dataset.sequence_id = dataset.sequence_id.astype(np.int64)
+            dataset.frequency = dataset.frequency.astype(np.int64)
 
         LOGGER.info(f"Converting and caching the dataset {name}-{adjusted_split} as Spark DataFrame {adjusted_cache_path}...")
         # Convert the Pandas DataFrame dataset to Spark DataFrame in Parquet
@@ -355,19 +414,30 @@ def main():
         is_pile = dataset_name == "pile"
 
         for data_scheme in data_schemes:
-            LOGGER.info("Loading pre-computed features...")
-            precomputed_features = load_precomputed_features(data_scheme, is_test=is_test)
-            PIPELINE.register_features(precomputed_features)
-
             if is_memorized or is_test:
                 # The memorized dataset has multiple splits by the model size
                 for model_size in model_sizes:
+                    precomputed_features = load_precomputed_features(
+                        data_scheme, 
+                        is_test=is_test, 
+                        is_memorized=is_memorized,
+                        model_name=model_size
+                    )
+                    PIPELINE.register_features(precomputed_features)
+
                     split_name = f"{data_scheme}.{model_size}"
                     LOGGER.info(f"Loading dataset {dataset_name} and split {split_name}...")
                     dataset = load_non_pile_dataset(dataset_name, data_scheme, model_size)
                     LOGGER.info(f"Calculating metrics for {split_name} on dataset {dataset_name}...")
                     run_non_pile_pipeline(dataset, dataset_name, split_name, args.run_id, args.sample_size, args.sample_seed)
             elif is_pile:
+                precomputed_features = load_precomputed_features(
+                    data_scheme, 
+                    is_test=is_test, 
+                    is_memorized=is_memorized,
+                    model_name=""
+                )
+                PIPELINE.register_features(precomputed_features)
                 LOGGER.info(f"Loading dataset {dataset_name}...")
                 # The pile dataset contains all model sizes in a single split
                 dataset = load_pile_dataset(data_scheme)
