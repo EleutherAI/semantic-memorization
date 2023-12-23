@@ -9,5 +9,7 @@ if not _has_registered_all_filters:
     from .token_frequency_statistics_filter import token_frequency_statistics_filter
     from .pattern_incrementing import incrementing_sequences_filter
     from .highly_repetitive import highly_repetitive_filter
+    from .code_vs_nl import code_vs_nl_filter
+    from .semantic_duplicates_filter import semantic_duplicates_filter
 
     _has_registered_all_filters = True

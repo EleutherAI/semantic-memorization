@@ -18,12 +18,13 @@ def init_distributed(rank: int, world_size: int):
     torch.cuda.set_device(rank)
 
 if __name__ == '__main__':
+    DS_TYPE = 'deduped'
     parser = argparse.ArgumentParser(
         prog = 'Classify Pythia tokens into cude or nl',
     )
     parser.add_argument(
         '--offsets_path',
-        default = 'results/zero_offsets_standard.npy',
+        default = f'results/zero_offsets_{DS_TYPE}.npy',
         help = 'Path to Sequences of tokens'
     )
     parser.add_argument(
@@ -38,8 +39,8 @@ if __name__ == '__main__':
     )
     parser.add_argument(
         '--save_path',
-        default = 'results/classification_scores/',
-        help = 'Path to save embeddings on'
+        default = f'results/classification_scores/{DS_TYPE}/',
+        help = 'Path to save scores on on'
     )
     args = parser.parse_args()
     rank = int(os.environ['RANK'])
