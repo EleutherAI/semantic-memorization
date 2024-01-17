@@ -25,6 +25,7 @@ from xicorrelation import xicorr as xi_correlation
 
 from model_parameters import (
     CATEGORICAL_FEATURE_COLUMNS,
+    CLASS_WEIGHT_METHOD,
     CONTINUOUS_FEATURE_COLUMNS,
     DATA_SCHEME,
     EXPERIMENT_ROOT,
@@ -314,6 +315,7 @@ def train_lr_model(train_features, train_labels, test_features, test_labels):
         max_iter=MAX_MODEL_ITERATIONS,
         penalty=REG_NAME,
         C=REG_STRENGTH,
+        class_weight=CLASS_WEIGHT_METHOD,
     )
     model.fit(train_features, train_labels)
 

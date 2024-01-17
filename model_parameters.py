@@ -75,5 +75,8 @@ MAX_MODEL_ITERATIONS = 10000
 FIT_INTERCEPT = True
 REG_NAME = "l2"
 # Inverse of regularization strength; smaller values specify stronger regularization.
-# Reference https://scikit-learn.org/stable/modules/generated/sklearn.linear_model.LogisticRegression.html#sklearn.linear_model.LogisticRegression
+# Reference: https://scikit-learn.org/stable/modules/generated/sklearn.linear_model.LogisticRegression.html#sklearn.linear_model.LogisticRegression
 REG_STRENGTH = 1.0
+# num_samples / (num_classes * np.bincount(labels))
+# Reference: https://scikit-learn.org/stable/modules/generated/sklearn.linear_model.LogisticRegression.html#sklearn.linear_model.LogisticRegression
+CLASS_WEIGHT_METHOD = "balanced"
