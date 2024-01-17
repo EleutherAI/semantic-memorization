@@ -5,22 +5,19 @@ import os
 import pickle
 from argparse import ArgumentParser
 from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
-import seaborn as sns
 from datasets import load_dataset
-from matplotlib import pyplot as plt
 from scipy import stats
 from scipy.stats import pearsonr as pearson_correlation
 from scipy.stats import spearmanr as spearman_correlation
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import roc_auc_score, confusion_matrix, average_precision_score, log_loss
+from sklearn.metrics import roc_auc_score, average_precision_score, log_loss
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import MinMaxScaler, StandardScaler
+from sklearn.preprocessing import StandardScaler
 from tqdm import tqdm
 
 # Repo - https://github.com/jettify/xicorrelation

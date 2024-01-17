@@ -38,9 +38,9 @@ ALL_FEATURE_COLUMNS = CONTINUOUS_FEATURE_COLUMNS + CATEGORICAL_FEATURE_COLUMNS
 
 def derive_is_templating_feature(row):
     if row.is_incrementing or row.is_repeating:
-        return True
+        return 1
 
-    return False
+    return 0
 
 
 """
