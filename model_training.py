@@ -81,13 +81,25 @@ def parse_cli_args() -> Namespace:
     """
     parser = ArgumentParser()
 
-    run_id_args_help = "The ID for this run. Defaults to current date and time."
-    run_id_args_default = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     parser.add_argument(
         "--run_id",
         type=str,
-        help=run_id_args_help,
-        default=run_id_args_default,
+        help="The ID for this run. Defaults to current date and time.",
+        default=datetime.now().strftime("%Y-%m-%d_%H-%M-%S"),
+    )
+
+    parser.add_argument(
+        "--taxonomy_search_start_index",
+        type=int,
+        help="The starting index for the list of taxonomy search candidates",
+        default=None,
+    )
+
+    parser.add_argument(
+        "--taxonomy_search_end_index",
+        type=int,
+        help="The ending index for the list of taxonomy search candidates",
+        default=None,
     )
 
     return parser.parse_args()
@@ -691,6 +703,8 @@ def train_all_taxonomy_pairs(
     baseline_model: LogisticRegression,
     taxonomy_thresholds: DefaultDict,
     pile_dataset: pd.DataFrame,
+    start_index: int = None,
+    end_index: int = None,
 ) -> None:
     """
     Trains models for all pairs of features to find the optimal taxonomy.
@@ -706,6 +720,8 @@ def train_all_taxonomy_pairs(
         baseline_model (LogisticRegression): The baseline model.
         taxonomy_thresholds (DefaultDict): The taxonomy thresholds.
         pile_dataset (pd.DataFrame): The pile dataset.
+        start_index (int, optional): The starting index for the list of taxonomy search candidates. Defaults to None.
+        end_index (int, optional): The ending index for the list of taxonomy search candidates. Defaults to None.
 
     Returns:
         None
@@ -714,8 +730,18 @@ def train_all_taxonomy_pairs(
     features_with_quantiles = list(itertools.product(TAXONOMY_SEARCH_FEATURES, TAXONOMY_QUANTILES))
     # We drop candidates where they are the same feature.
     # Future work may include exploring features with interesting value regimes.
-    optimal_taxonomy_candidates = [t for t in list(itertools.permutations(features_with_quantiles, 2)) if t[0][0] != t[1][0]]
-    LOGGER.info(f"Training {len(optimal_taxonomy_candidates)} model(s) to find the optimal taxonomy")
+    optimal_taxonomy_candidates = sorted([t for t in list(itertools.permutations(features_with_quantiles, 2)) if t[0][0] != t[1][0]])
+    LOGGER.info(f"Generated {len(optimal_taxonomy_candidates)} pairs of optimal taxonomy candidates")
+
+    if start_index is not None or end_index is not None:
+        is_start_index_valid = start_index >= 0 and start_index < len(optimal_taxonomy_candidates)
+        is_end_index_valid = end_index >= 0 and end_index < len(optimal_taxonomy_candidates)
+        are_both_indices_valid = is_start_index_valid and is_end_index_valid and end_index >= start_index
+
+        if are_both_indices_valid:
+            LOGGER.info(f"Training a subset of {end_index - start_index} taxonomy candidates...")
+            LOGGER.info(f"Start Index: {start_index} | End Index: {end_index}")
+            optimal_taxonomy_candidates = optimal_taxonomy_candidates[start_index:end_index]
 
     LOGGER.info("Getting baseline validation predictions...")
     baseline_validation_predictions = baseline_model.predict_proba(validation_features)[:, 1]
@@ -785,6 +811,10 @@ def main():
     LOGGER.info("---------------------------------------------------------------------------")
     LOGGER.info("Starting model training with the following parameters:")
     LOGGER.info(f"Run ID: {args.run_id}")
+    if args.taxonomy_search_start_index is not None:
+        LOGGER.info(f"Taxonomy Search Start Index: {args.taxonomy_search_start_index}")
+    if args.taxonomy_search_end_index is not None:
+        LOGGER.info(f"Taxonomy Search End Index: {args.taxonomy_search_end_index}")
     LOGGER.info("---------------------------------------------------------------------------")
 
     LOGGER.info("Loading HF datasets...")
@@ -836,6 +866,8 @@ def main():
         baseline_result.model,
         taxonomy_thresholds,
         pile_dataset,
+        start_index=args.taxonomy_search_start_index,
+        end_index=args.taxonomy_search_end_index,
     )
 
 

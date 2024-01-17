@@ -1,3 +1,5 @@
+import pandas as pd
+
 """
 This file manages the modeling-related parameters with hard-coded values.
 If we want to change the parameters, then we can parameterize them in CLI.
@@ -36,7 +38,16 @@ CATEGORICAL_FEATURE_COLUMNS = [
 ALL_FEATURE_COLUMNS = CONTINUOUS_FEATURE_COLUMNS + CATEGORICAL_FEATURE_COLUMNS
 
 
-def derive_is_templating_feature(row):
+def derive_is_templating_feature(row: pd.Series) -> int:
+    """
+    This function derives the `is_templating` feature from the dataset.
+
+    Args:
+        row (pd.Series): A row of the dataset
+
+    Returns:
+        int: 1 if the row exhibits templating behavior, 0 otherwise
+    """
     if row.is_incrementing or row.is_repeating:
         return 1
 
