@@ -27,7 +27,7 @@ from model_parameters import (
     CATEGORICAL_FEATURE_COLUMNS,
     CONTINUOUS_FEATURE_COLUMNS,
     DATA_SCHEME,
-    EXPERIMENT_BASE,
+    EXPERIMENT_ROOT,
     FIT_INTERCEPT,
     GLOBAL_SEED,
     MAX_MODEL_ITERATIONS,
@@ -364,6 +364,7 @@ def train_taxonomical_model(
 
 
 def train_baseline_and_taxonomic_models(
+    experiment_base,
     train_features,
     train_labels,
     train_indices,
@@ -384,7 +385,7 @@ def train_baseline_and_taxonomic_models(
         "wald_statistic": list(baseline_result.wald_stats),
         "wald_pvalue": list(baseline_result.wald_pvalue),
     }
-    save_lr_models(EXPERIMENT_BASE, DATA_SCHEME, "baseline", MODEL_SIZE, baseline_result.model, baseline_metadata)
+    save_lr_models(experiment_base, DATA_SCHEME, "baseline", MODEL_SIZE, baseline_result.model, baseline_metadata)
 
     for taxonomy in TAXONOMIES:
         taxonomical_feature = np.expand_dims((taxonomy_categories == taxonomy).astype(int).values, axis=1)
@@ -408,7 +409,7 @@ def train_baseline_and_taxonomic_models(
             "wald_statistic": list(taxonomical_model_result.wald_stats) if taxonomical_model_result.wald_stats is not None else [],
             "wald_pvalue": list(taxonomical_model_result.wald_pvalue) if taxonomical_model_result.wald_pvalue is not None else [],
         }
-        save_lr_models(EXPERIMENT_BASE, DATA_SCHEME, taxonomy, MODEL_SIZE, taxonomical_model_result.model, taxonomical_model_metadata)
+        save_lr_models(experiment_base, DATA_SCHEME, taxonomy, MODEL_SIZE, taxonomical_model_result.model, taxonomical_model_metadata)
 
     return baseline_result
 
@@ -478,6 +479,7 @@ def generate_optimal_taxonomy_candidate(feature_1, threshold_1, feature_2, thres
 
 
 def train_all_taxonomy_pairs(
+    experiment_base,
     train_features,
     train_labels,
     train_indices,
@@ -534,7 +536,7 @@ def train_all_taxonomy_pairs(
                 "wald_pvalue": list(taxonomical_model_result.wald_pvalue) if taxonomical_model_result.wald_pvalue is not None else [],
             }
             save_taxonomy_search_models(
-                EXPERIMENT_BASE,
+                experiment_base,
                 DATA_SCHEME,
                 MODEL_SIZE,
                 candidate_1_name,
@@ -552,8 +554,9 @@ def main():
     """
     args = parse_cli_args()
 
-    os.makedirs(f"./{EXPERIMENT_BASE}/{args.run_id}", exist_ok=True)
-    file_handler = logging.FileHandler(f"./{EXPERIMENT_BASE}/{args.run_id}/run.log")
+    experiment_base = f"{EXPERIMENT_ROOT}/{args.run_id}"
+    os.makedirs(f"{experiment_base}", exist_ok=True)
+    file_handler = logging.FileHandler(f"{EXPERIMENT_ROOT}/{args.run_id}/run.log")
     file_handler.setLevel(logging.DEBUG)
     formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(module)s:%(lineno)d - %(message)s")
     file_handler.setFormatter(formatter)
@@ -587,7 +590,7 @@ def main():
 
     LOGGER.info("Calculating correlation coefficients of base + taxonomic features...")
     correlation_results = calculate_all_correlation_coefficients(features, labels, taxonomy_categories)
-    save_correlation_coefficients(EXPERIMENT_BASE, DATA_SCHEME, MODEL_SIZE, correlation_results)
+    save_correlation_coefficients(experiment_base, DATA_SCHEME, MODEL_SIZE, correlation_results)
 
     (train_features, train_labels, train_indices) = train
     (validation_features, validation_labels, validation_indices) = validation
@@ -595,7 +598,7 @@ def main():
 
     LOGGER.info("Training baseline and taxonomic models...")
     baseline_result = train_baseline_and_taxonomic_models(
-        train_features, train_labels, train_indices, test_features, test_labels, test_indices, taxonomy_categories
+        experiment_base, train_features, train_labels, train_indices, test_features, test_labels, test_indices, taxonomy_categories
     )
 
     LOGGER.info("Generating taxonomy quantile thresholds...")
@@ -603,6 +606,7 @@ def main():
 
     LOGGER.info("Starting to train all taxonomy pairs...")
     train_all_taxonomy_pairs(
+        experiment_base,
         train_features,
         train_labels,
         train_indices,

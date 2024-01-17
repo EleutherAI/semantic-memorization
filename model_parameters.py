@@ -2,7 +2,7 @@
 This file manages the modeling-related parameters with hard-coded values.
 If we want to change the parameters, then we can parameterize them in CLI.
 """
-EXPERIMENT_BASE = "experiments"
+EXPERIMENT_ROOT = "experiments"
 MODEL_SIZE = "12b"
 DATA_SCHEME = "deduped"
 GENERATION_HF_DATASET_NAME = "usvsnsp/generation-semantic-filters"
