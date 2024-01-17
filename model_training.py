@@ -7,7 +7,7 @@ from argparse import ArgumentParser, Namespace
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Callable, DefaultDict, Dict, List, Tuple, TypeVar
+from typing import Any, Callable, DefaultDict, Dict, List, Tuple
 
 import numpy as np
 import pandas as pd
@@ -51,7 +51,7 @@ from model_parameters import (
 LOGGER = logging.getLogger("experiments")
 LOGGER.setLevel(logging.INFO)
 
-Dataset = TypeVar("Dataset", Tuple[np.ndarray, np.ndarray, np.ndarray])
+Dataset = Tuple[np.ndarray, np.ndarray, np.ndarray]
 
 
 @dataclass
