@@ -53,7 +53,6 @@ TAXONOMY_SEARCH_FEATURES = [
     "avg_frequency",
     "min_frequency",
     "median_frequency",
-    "generation_perplexity_standard",
     "0_8_templates",
     "0_8_snowclones",
     "sequence_duplicates",
