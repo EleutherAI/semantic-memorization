@@ -1,8 +1,10 @@
+from typing import Callable
+
 import pandas as pd
 
 """
-This file manages the modeling-related parameters with hard-coded values.
-If we want to change the parameters, then we can parameterize them in CLI.
+This file manages the modeling-related parameters that are **fixed**.
+If we want to run parameter search on certain parameters, then consider parameterize them in CLI.
 """
 EXPERIMENT_ROOT = "experiments"
 MODEL_SIZE = "12b"
@@ -36,6 +38,10 @@ CATEGORICAL_FEATURE_COLUMNS = [
     "is_templating",
 ]
 ALL_FEATURE_COLUMNS = CONTINUOUS_FEATURE_COLUMNS + CATEGORICAL_FEATURE_COLUMNS
+
+"""
+Derived Features
+"""
 
 
 def derive_is_templating_feature(row: pd.Series) -> int:
@@ -73,15 +79,41 @@ TAXONOMY_SEARCH_FEATURES = [
     "is_templating",
     "generation_perplexity_generation",
 ]
+
+"""
+Taxonomy Function and Parameters
+"""
 SEQUENCE_DUPLICATE_THRESHOLD = 10
+
+
+def taxonomy_function() -> Callable[[pd.Series], str]:
+    """
+    Get the taxonomy function for each sample.
+
+    Returns:
+        Callable[[pd.Series], str]: The taxonomy function.
+    """
+
+    def classify_row(row: pd.Series) -> str:
+        if row.sequence_duplicates > SEQUENCE_DUPLICATE_THRESHOLD:
+            return "recitation"
+        if row.is_templating:
+            return "reconstruction"
+
+        return "recollection"
+
+    return classify_row
+
 
 """
 Model Training Hyper-parameters
 """
 GLOBAL_SEED = 2024_01_01
+
 TRAIN_SIZE = 0.8
 VALIDATION_SIZE = 0.1
 TEST_SIZE = 0.2
+
 MAX_MODEL_ITERATIONS = 10000
 FIT_INTERCEPT = True
 REG_NAME = "l2"

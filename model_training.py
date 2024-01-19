@@ -38,7 +38,6 @@ from model_parameters import (
     ENTROPY_HF_DATASET_NAME,
     REG_NAME,
     REG_STRENGTH,
-    SEQUENCE_DUPLICATE_THRESHOLD,
     TAXONOMIES,
     TAXONOMY_QUANTILES,
     TAXONOMY_SEARCH_FEATURES,
@@ -46,6 +45,7 @@ from model_parameters import (
     TRAIN_SIZE,
     VALIDATION_SIZE,
     derive_is_templating_feature,
+    taxonomy_function,
 )
 
 LOGGER = logging.getLogger("experiments")
@@ -130,6 +130,11 @@ def load_hf_dataset() -> Tuple[pd.DataFrame, pd.DataFrame]:
         suffixes=("_generation", "_entropy"),
     )
 
+    # Drop duplicate sequence IDs
+    # Observation -- Only sequence ID `101275048` was duplicated. Some columns have different values, e.g. perplexity statistics.
+    # TODO: Investigate data generation pipeline
+    memories_dataset.drop_duplicates("sequence_id", keep="first", inplace=True)
+
     LOGGER.info(f"Merged pile dataset shape: {pile_dataset.shape}")
     LOGGER.info(f"Merged memories dataset shape: {memories_dataset.shape}")
 
@@ -152,25 +157,6 @@ def construct_derived_features(pile_dataset: pd.DataFrame, memories_dataset: pd.
     memories_dataset["is_templating"] = memories_dataset.apply(derive_is_templating_feature, axis=1)
 
     return pile_dataset, memories_dataset
-
-
-def get_taxonomy_function() -> Callable[[pd.Series], str]:
-    """
-    Get the taxonomy function for each sample.
-
-    Returns:
-        Callable[[pd.Series], str]: The taxonomy function.
-    """
-
-    def classify_row(row):
-        if row.sequence_duplicates > SEQUENCE_DUPLICATE_THRESHOLD:
-            return "recitation"
-        if row.is_templating:
-            return "reconstruction"
-
-        return "recollection"
-
-    return classify_row
 
 
 def normalize_dataset(pile_dataset: pd.DataFrame) -> Tuple[np.ndarray, np.ndarray]:
@@ -636,8 +622,8 @@ def train_baseline_and_taxonomic_models(
 
     taxonomic_results = []
     for taxonomy in TAXONOMIES:
-        taxonomic_indices = (taxonomy_categories == taxonomy).astype(int).values
-        taxonomic_features, taxonomic_labels = features[taxonomic_indices, :], labels[taxonomic_indices]
+        sample_indices = taxonomy_categories.index[taxonomy_categories == taxonomy]
+        taxonomic_features, taxonomic_labels = features[sample_indices, :], labels[sample_indices]
 
         LOGGER.info(f"Training {taxonomy}-partitioned model...")
         taxonomic_model_result = train_taxonomic_model(
@@ -894,7 +880,8 @@ def main():
     pile_dataset, memories_dataset = construct_derived_features(pile_dataset, memories_dataset)
 
     LOGGER.info("Generating taxonomy categories for each sample...")
-    taxonomy_categories = pile_dataset.apply(get_taxonomy_function(), axis=1)
+    taxonomy_func = taxonomy_function()
+    taxonomy_categories = pile_dataset.apply(taxonomy_func, axis=1)
 
     features, labels = normalize_dataset(pile_dataset)
 
