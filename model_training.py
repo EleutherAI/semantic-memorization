@@ -373,7 +373,7 @@ def calculate_all_correlation_coefficients(features: np.ndarray, labels: np.ndar
 
     for taxonomy in TAXONOMIES:
         taxonomic_indices = (taxonomy_categories == taxonomy).astype(int).values
-        taxonomic_features, taxonomic_labels = features[taxonomic_indices], labels[taxonomic_indices]
+        taxonomic_features, taxonomic_labels = features[taxonomic_indices, :], labels[taxonomic_indices]
         taxonomic_pearson, taxonomic_spearman, taxonomic_xi = calculate_correlation_coefficients(taxonomic_features, taxonomic_labels)
         coefficients[taxonomy]["pearson"] = taxonomic_pearson
         coefficients[taxonomy]["spearman"] = taxonomic_spearman
@@ -637,7 +637,7 @@ def train_baseline_and_taxonomic_models(
     taxonomic_results = []
     for taxonomy in TAXONOMIES:
         taxonomic_indices = (taxonomy_categories == taxonomy).astype(int).values
-        taxonomic_features, taxonomic_labels = features[taxonomic_indices, :], labels[taxonomic_indices, :]
+        taxonomic_features, taxonomic_labels = features[taxonomic_indices, :], labels[taxonomic_indices]
 
         LOGGER.info(f"Training {taxonomy}-partitioned model...")
         taxonomic_model_result = train_taxonomic_model(
@@ -832,7 +832,7 @@ def train_all_taxonomy_pairs(
                 continue
 
             LOGGER.info(f"Training {taxonomy} model...")
-            taxonomic_features, taxonomic_labels = features[taxonomic_indices, :], labels[taxonomic_indices, :]
+            taxonomic_features, taxonomic_labels = features[taxonomic_indices, :], labels[taxonomic_indices]
             taxonomic_model_result = train_taxonomic_model(
                 taxonomic_features,
                 taxonomic_labels,
