@@ -358,8 +358,8 @@ def calculate_all_correlation_coefficients(features: np.ndarray, labels: np.ndar
     coefficients["baseline"]["xi"] = baseline_xi
 
     for taxonomy in TAXONOMIES:
-        taxonomic_indices = (taxonomy_categories == taxonomy).astype(int).values
-        taxonomic_features, taxonomic_labels = features[taxonomic_indices, :], labels[taxonomic_indices]
+        sample_indices = taxonomy_categories.index[taxonomy_categories == taxonomy]
+        taxonomic_features, taxonomic_labels = features[sample_indices, :], labels[sample_indices]
         taxonomic_pearson, taxonomic_spearman, taxonomic_xi = calculate_correlation_coefficients(taxonomic_features, taxonomic_labels)
         coefficients[taxonomy]["pearson"] = taxonomic_pearson
         coefficients[taxonomy]["spearman"] = taxonomic_spearman
@@ -811,14 +811,13 @@ def train_all_taxonomy_pairs(
         taxonomy_categories = pile_dataset.apply(taxonomy_func, axis=1)
 
         for taxonomy in ["taxonomy_1", "taxonomy_2", "taxonomy_3"]:
-            taxonomic_indices = (taxonomy_categories == taxonomy).astype(int).values
-
-            if taxonomic_indices.sum() == 0:
-                LOGGER.info(f"Skipping {taxonomy} since there are no samples...")
+            sample_indices = taxonomy_categories.index[taxonomy_categories == taxonomy]
+            if len(sample_indices) == 0:
+                LOGGER.info(f"Skipping {taxonomy} since there are no samples; this could be due to the quantile threshold being too high.")
                 continue
 
             LOGGER.info(f"Training {taxonomy} model...")
-            taxonomic_features, taxonomic_labels = features[taxonomic_indices, :], labels[taxonomic_indices]
+            taxonomic_features, taxonomic_labels = features[sample_indices, :], labels[sample_indices]
             taxonomic_model_result = train_taxonomic_model(
                 taxonomic_features,
                 taxonomic_labels,
