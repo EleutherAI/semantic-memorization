@@ -7,7 +7,7 @@ from argparse import ArgumentParser, Namespace
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Callable, DefaultDict, Dict, List, Tuple
+from typing import Any, Callable, DefaultDict, Dict, List, Tuple, Optional
 
 import numpy as np
 import pandas as pd
@@ -55,24 +55,17 @@ Dataset = Tuple[np.ndarray, np.ndarray, np.ndarray]
 
 
 @dataclass
-class BaselineModelResult:
+class ModelResult:
     model: LogisticRegression
-    test_predictions: list
-    roc_auc: float
-    pr_auc: float
+    train_roc_auc: float
+    train_pr_auc: float
+    evaluation_predictions: list
+    evaluation_dataset_type: str
+    evaluation_roc_auc: float
+    evaluation_pr_auc: float
     wald_stats: float
     wald_pvalue: float
-
-
-@dataclass
-class TaxonomicModelResult:
-    model: LogisticRegression
-    test_predictions: list
-    roc_auc: float
-    pr_auc: float
-    wald_stats: float
-    wald_pvalue: float
-    lrt_pvalue: float
+    lrt_pvalue: Optional[float]
 
 
 def parse_cli_args() -> Namespace:
@@ -214,6 +207,7 @@ def split_dataset(features, labels) -> Tuple[Dataset, Dataset, Dataset]:
         Tuple[np.ndarray, np.ndarray, np.ndarray]: The validation features, validation labels, and validation indices.
         Tuple[np.ndarray, np.ndarray, np.ndarray]: The test features, test labels, and test indices.
     """
+    LOGGER.info(f"Split datasets into {TRAIN_SIZE * 100}% training, {VALIDATION_SIZE * 100}% validation, and {TEST_SIZE * 100}% test")
     indices = np.arange(len(features))
 
     train_features, remain_features, train_labels, remain_labels = train_test_split(
@@ -241,6 +235,10 @@ def split_dataset(features, labels) -> Tuple[Dataset, Dataset, Dataset]:
         test_size=TEST_SIZE / (TEST_SIZE + VALIDATION_SIZE),
         random_state=GLOBAL_SEED,
     )
+
+    LOGGER.info(f"Training set size: {len(train_features)}")
+    LOGGER.info(f"Validation set size: {len(validation_features)}")
+    LOGGER.info(f"Test set size: {len(test_features)}")
 
     return (
         (train_features, train_labels, train_indices),
@@ -444,19 +442,19 @@ def save_lr_models(base_path: str, data_scheme: str, taxonomy: str, model_size: 
 
 
 def train_lr_model(
-    train_features: np.ndarray, train_labels: np.ndarray, test_features: np.ndarray, test_labels: np.ndarray
-) -> Tuple[LogisticRegression, np.ndarray, float, float]:
+    train_features: np.ndarray, train_labels: np.ndarray, evaluation_features: np.ndarray, evaluation_labels: np.ndarray
+) -> Tuple[LogisticRegression, np.ndarray, float, float, float, float]:
     """
     Train the LR model.
 
     Args:
         train_features (np.ndarray): The training features.
         train_labels (np.ndarray): The training labels.
-        test_features (np.ndarray): The test features.
-        test_labels (np.ndarray): The test labels.
+        evaluation_features (np.ndarray): The evaluation features.
+        evaluation_labels (np.ndarray): The evaluation labels.
 
     Returns:
-        Tuple[LogisticRegression, np.ndarray, float, float]: The model, test predictions, ROC AUC, and PR AUC.
+        Tuple[LogisticRegression, np.ndarray, float, float, float, float]: The trained model, evaluation predictions, and train/evaluation metrics.
     """
     # Training with fixed parameters
     model = LogisticRegression(
@@ -470,18 +468,23 @@ def train_lr_model(
     model.fit(train_features, train_labels)
 
     # Calculate classification metrics
-    test_predictions = model.predict_proba(test_features)[:, 1]
-    roc_auc = roc_auc_score(test_labels, test_predictions)
-    pr_auc = average_precision_score(test_labels, test_predictions)
-    LOGGER.info(f"ROC AUC: {roc_auc:.4f} | PR AUC: {pr_auc:.4}")
+    train_predictions = model.predict_proba(train_features)[:, 1]
+    train_roc_auc = roc_auc_score(train_labels, train_predictions)
+    train_pr_auc = average_precision_score(train_labels, train_predictions)
+    evaluation_predictions = model.predict_proba(evaluation_features)[:, 1]
+    evaluation_roc_auc = roc_auc_score(evaluation_labels, evaluation_predictions)
+    evaluation_pr_auc = average_precision_score(evaluation_labels, evaluation_predictions)
 
-    return model, test_predictions, roc_auc, pr_auc
+    LOGGER.info(f"Training ROC AUC: {train_roc_auc:.4f} | Training PR AUC: {train_pr_auc:.4}")
+    LOGGER.info(f"Evaluation ROC AUC: {evaluation_roc_auc:.4f} | Evaluation PR AUC: {evaluation_pr_auc:.4}")
+
+    return model, evaluation_predictions, train_roc_auc, train_pr_auc, evaluation_roc_auc, evaluation_pr_auc
 
 
 def train_baseline_model(
     features: np.ndarray,
     labels: np.ndarray,
-) -> BaselineModelResult:
+) -> ModelResult:
     """
     Train the baseline model.
 
@@ -490,33 +493,51 @@ def train_baseline_model(
         labels (np.ndarray): The labels.
 
     Returns:
-        BaselineModelResult: The baseline model result.
+        ModelResult: The baseline model result.
     """
     calculate_label_priors(labels)
 
-    LOGGER.info(f"Split datasets into {TRAIN_SIZE * 100}% training, {VALIDATION_SIZE * 100}% validation, and {TEST_SIZE * 100}% test")
     (train, _, test) = split_dataset(features, labels)
     (train_features, train_labels, _) = train
-    (test_features, test_labels, _) = test
 
-    model, test_predictions, roc_auc, pr_auc = train_lr_model(train_features, train_labels, test_features, test_labels)
+    LOGGER.info("Using test set as the evaluation set...")
+    (evaluation_features, evaluation_labels, _) = test
+
+    model, evaluation_predictions, train_roc_auc, train_pr_auc, evaluation_roc_auc, evaluation_pr_auc = train_lr_model(
+        train_features,
+        train_labels,
+        evaluation_features,
+        evaluation_labels,
+    )
 
     try:
         LOGGER.info("Performing Wald Test...")
-        wald_stats, wald_pvalue = wald_test(model, test_features)
+        wald_stats, wald_pvalue = wald_test(model, evaluation_features)
     except Exception as e:
         LOGGER.info(f"Wald Test failed with Exception {e}")
         wald_stats, wald_pvalue = None, None
 
-    return BaselineModelResult(model, test_predictions, roc_auc, pr_auc, wald_stats, wald_pvalue)
+    return ModelResult(
+        model,
+        train_roc_auc,
+        train_pr_auc,
+        evaluation_predictions,
+        "test",
+        evaluation_roc_auc,
+        evaluation_pr_auc,
+        wald_stats,
+        wald_pvalue,
+        # Not applicable since there are no alternative models to compare with, this is the baseline
+        lrt_pvalue=None,
+    )
 
 
 def train_taxonomic_model(
     features: np.ndarray,
     labels: np.ndarray,
     baseline_model: LogisticRegression,
-    is_searching_for_optimal_taxonomy: bool = True,
-) -> TaxonomicModelResult:
+    is_searching_for_optimal_taxonomy: bool = False,
+) -> ModelResult:
     """
     Train the taxonomic model.
 
@@ -526,23 +547,30 @@ def train_taxonomic_model(
         baseline_model (LogisticRegression): The baseline model.
 
     Returns:
-        TaxonomicModelResult: The taxonomic model result.
+        ModelResult: The taxonomic model result.
     """
     calculate_label_priors(labels)
 
-    LOGGER.info(f"Split datasets into {TRAIN_SIZE * 100}% training, {VALIDATION_SIZE * 100}% validation, and {TEST_SIZE * 100}% test")
     (train, validation, test) = split_dataset(features, labels)
     (train_features, train_labels, _) = train
 
     if is_searching_for_optimal_taxonomy:
-        LOGGER.info("Using validation set for evaluation...")
+        evaluation_dataset_type = "validation"
+        LOGGER.info("Using validation set as the evaluation set...")
         (evaluation_features, evaluation_labels, _) = validation
     else:
+        evaluation_dataset_type = "test"
+        LOGGER.info("Using test set as the evaluation set...")
         (evaluation_features, evaluation_labels, _) = test
 
-    model, evaluation_predictions, roc_auc, pr_auc = train_lr_model(train_features, train_labels, evaluation_features, evaluation_labels)
+    model, evaluation_predictions, train_roc_auc, train_pr_auc, evaluation_roc_auc, evaluation_pr_auc = train_lr_model(
+        train_features,
+        train_labels,
+        evaluation_features,
+        evaluation_labels,
+    )
 
-    LOGGER.info("Getting baseline predictions...")
+    LOGGER.info("Getting baseline predictions on the evaluation set...")
     baseline_evaluation_predictions = baseline_model.predict_proba(evaluation_features)[:, 1]
 
     lrt_pvalue = None
@@ -557,7 +585,18 @@ def train_taxonomic_model(
     except Exception as e:
         LOGGER.info(f"Wald Test failed with Exception {e}")
 
-    return TaxonomicModelResult(model, evaluation_predictions, roc_auc, pr_auc, wald_stats, wald_pvalue, lrt_pvalue)
+    return ModelResult(
+        model,
+        train_roc_auc,
+        train_pr_auc,
+        evaluation_predictions,
+        evaluation_dataset_type,
+        evaluation_roc_auc,
+        evaluation_pr_auc,
+        wald_stats,
+        wald_pvalue,
+        lrt_pvalue,
+    )
 
 
 def train_baseline_and_taxonomic_models(
@@ -565,7 +604,7 @@ def train_baseline_and_taxonomic_models(
     features: np.ndarray,
     labels: np.ndarray,
     taxonomy_categories: pd.Series,
-) -> BaselineModelResult:
+) -> Tuple[ModelResult, List[Tuple[str, ModelResult]]]:
     """
     Train the baseline and taxonomic models.
 
@@ -576,15 +615,18 @@ def train_baseline_and_taxonomic_models(
         taxonomy_categories (pd.Series): The taxonomy categories.
 
     Returns:
-        BaselineModelResult: The baseline model result.
+        Tuple[ModelResult, List[Tuple[str, ModelResult]]]: The baseline model result and the list of taxonomic model results.
     """
     LOGGER.info("Training the baseline model with all data...")
     baseline_result = train_baseline_model(features, labels)
 
     LOGGER.info("Saving baseline model results...")
     baseline_metadata = {
-        "roc_auc": baseline_result.roc_auc,
-        "pr_auc": baseline_result.pr_auc,
+        "train_roc_auc": baseline_result.train_roc_auc,
+        "train_pr_auc": baseline_result.train_roc_auc,
+        "evaluation_roc_auc": baseline_result.evaluation_roc_auc,
+        "evaluation_pr_auc": baseline_result.evaluation_pr_auc,
+        "evaluation_dataset_type": baseline_result.evaluation_dataset_type,
         # Not applicable since there are no alternative models to compare with, this is the baseline
         "lrt_pvalue": None,
         "wald_statistic": list(baseline_result.wald_stats),
@@ -592,6 +634,7 @@ def train_baseline_and_taxonomic_models(
     }
     save_lr_models(experiment_base, DATA_SCHEME, "baseline", MODEL_SIZE, baseline_result.model, baseline_metadata)
 
+    taxonomic_results = []
     for taxonomy in TAXONOMIES:
         taxonomic_indices = (taxonomy_categories == taxonomy).astype(int).values
         taxonomic_features, taxonomic_labels = features[taxonomic_indices, :], labels[taxonomic_indices, :]
@@ -605,15 +648,19 @@ def train_baseline_and_taxonomic_models(
 
         LOGGER.info(f"Saving {taxonomy}-partitioned model results...")
         taxonomic_model_metadata = {
-            "roc_auc": taxonomic_model_result.roc_auc,
-            "pr_auc": taxonomic_model_result.pr_auc,
+            "train_roc_auc": taxonomic_model_result.train_roc_auc,
+            "train_pr_auc": taxonomic_model_result.train_roc_auc,
+            "evaluation_roc_auc": taxonomic_model_result.evaluation_roc_auc,
+            "evaluation_pr_auc": taxonomic_model_result.evaluation_pr_auc,
+            "evaluation_dataset_type": taxonomic_model_result.evaluation_dataset_type,
             "lrt_pvalue": taxonomic_model_result.lrt_pvalue,
             "wald_statistic": list(taxonomic_model_result.wald_stats) if taxonomic_model_result.wald_stats is not None else [],
             "wald_pvalue": list(taxonomic_model_result.wald_pvalue) if taxonomic_model_result.wald_pvalue is not None else [],
         }
         save_lr_models(experiment_base, DATA_SCHEME, taxonomy, MODEL_SIZE, taxonomic_model_result.model, taxonomic_model_metadata)
+        taxonomic_results.append((taxonomy, taxonomic_model_result))
 
-    return baseline_result
+    return baseline_result, taxonomic_results
 
 
 def save_taxonomy_search_models(
@@ -754,13 +801,15 @@ def train_all_taxonomy_pairs(
 
     if start_index is not None or end_index is not None:
         is_start_index_valid = start_index >= 0 and start_index < len(optimal_taxonomy_candidates)
-        is_end_index_valid = end_index >= 0 and end_index < len(optimal_taxonomy_candidates)
+        is_end_index_valid = end_index >= 0 and end_index <= len(optimal_taxonomy_candidates)
         are_both_indices_valid = is_start_index_valid and is_end_index_valid and end_index >= start_index
 
         if are_both_indices_valid:
             LOGGER.info(f"Training a subset of {end_index - start_index} taxonomy candidates...")
             LOGGER.info(f"Start Index: {start_index} | End Index: {end_index}")
             optimal_taxonomy_candidates = optimal_taxonomy_candidates[start_index:end_index]
+        else:
+            LOGGER.info("Subset indices are not valid, training all taxonomy candidates...")
 
     for i, (candidate_1, candidate_2) in enumerate(optimal_taxonomy_candidates):
         candidate_1_name, candidate_1_threshold_quantile = candidate_1
@@ -784,12 +833,16 @@ def train_all_taxonomy_pairs(
                 taxonomic_features,
                 taxonomic_labels,
                 baseline_model,
+                is_searching_for_optimal_taxonomy=True,
             )
 
             LOGGER.info(f"Saving {taxonomy} model results...")
             taxonomic_model_metadata = {
-                "roc_auc": taxonomic_model_result.roc_auc,
-                "pr_auc": taxonomic_model_result.pr_auc,
+                "train_roc_auc": taxonomic_model_result.train_roc_auc,
+                "train_pr_auc": taxonomic_model_result.train_roc_auc,
+                "evaluation_roc_auc": taxonomic_model_result.evaluation_roc_auc,
+                "evaluation_pr_auc": taxonomic_model_result.evaluation_pr_auc,
+                "evaluation_dataset_type": taxonomic_model_result.evaluation_dataset_type,
                 "lrt_pvalue": taxonomic_model_result.lrt_pvalue,
                 "wald_statistic": list(taxonomic_model_result.wald_stats) if taxonomic_model_result.wald_stats is not None else [],
                 "wald_pvalue": list(taxonomic_model_result.wald_pvalue) if taxonomic_model_result.wald_pvalue is not None else [],
@@ -846,7 +899,7 @@ def main():
     save_correlation_coefficients(experiment_base, DATA_SCHEME, MODEL_SIZE, correlation_results)
 
     LOGGER.info("Training baseline and taxonomic models...")
-    baseline_result = train_baseline_and_taxonomic_models(experiment_base, features, labels, taxonomy_categories)
+    baseline_result, _ = train_baseline_and_taxonomic_models(experiment_base, features, labels, taxonomy_categories)
 
     LOGGER.info("Generating taxonomy quantile thresholds...")
     taxonomy_thresholds = generate_taxonomy_quantile_thresholds(memories_dataset)
