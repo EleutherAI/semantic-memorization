@@ -826,9 +826,13 @@ def train_all_taxonomy_pairs(
 
         for taxonomy in ["taxonomy_1", "taxonomy_2", "taxonomy_3"]:
             taxonomic_indices = (taxonomy_categories == taxonomy).astype(int).values
-            taxonomic_features, taxonomic_labels = features[taxonomic_indices, :], labels[taxonomic_indices, :]
+
+            if taxonomic_indices.sum() == 0:
+                LOGGER.info(f"Skipping {taxonomy} since there are no samples...")
+                continue
 
             LOGGER.info(f"Training {taxonomy} model...")
+            taxonomic_features, taxonomic_labels = features[taxonomic_indices, :], labels[taxonomic_indices, :]
             taxonomic_model_result = train_taxonomic_model(
                 taxonomic_features,
                 taxonomic_labels,
