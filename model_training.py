@@ -93,6 +93,13 @@ def parse_cli_args() -> Namespace:
         default=None,
     )
 
+    parser.add_argument(
+        "--sequence_duplication_threshold",
+        type=int,
+        help="The threshold to classify a sample as recitation",
+        default=10,
+    )
+
     return parser.parse_args()
 
 
@@ -337,7 +344,7 @@ def calculate_correlation_coefficients(features: np.ndarray, labels: np.ndarray)
     return pearsons, spearmans, xis
 
 
-def calculate_all_correlation_coefficients(features: np.ndarray, labels: np.ndarray, taxonomy_categories: pd.Series) -> DefaultDict:
+def calculate_all_correlation_coefficients(features: np.ndarray, labels: np.ndarray, taxonomy_categories: pd.Series, args: Namespace) -> DefaultDict:
     """
     Calculate the correlation coefficients for each feature and taxonomy.
 
@@ -345,11 +352,13 @@ def calculate_all_correlation_coefficients(features: np.ndarray, labels: np.ndar
         features (np.ndarray): The features.
         labels (np.ndarray): The labels.
         taxonomy_categories (pd.Series): The taxonomy categories.
+        args (Namespace): The command line arguments.
 
     Returns:
         DefaultDict: The correlation coefficients for each feature and taxonomy.
     """
     coefficients = defaultdict(dict)
+    coefficients["metadata"]["sequence_duplication_threshold"] = args.sequence_duplication_threshold
 
     baseline_pearson, baseline_spearman, baseline_xi = calculate_correlation_coefficients(features, labels)
     coefficients["baseline"]["pearson"] = baseline_pearson
@@ -584,20 +593,22 @@ def train_taxonomic_model(
     )
 
 
-def train_baseline_and_taxonomic_models(
+def train_and_save_baseline_and_taxonomic_models(
     experiment_base: str,
     features: np.ndarray,
     labels: np.ndarray,
     taxonomy_categories: pd.Series,
+    args: Namespace,
 ) -> Tuple[ModelResult, List[Tuple[str, ModelResult]]]:
     """
-    Train the baseline and taxonomic models.
+    Train and save the baseline and taxonomic models.
 
     Args:
         experiment_base (str): The experiment base path.
         features (np.ndarray): The features.
         labels (np.ndarray): The labels.
         taxonomy_categories (pd.Series): The taxonomy categories.
+        args (Namespace): The command line arguments.
 
     Returns:
         Tuple[ModelResult, List[Tuple[str, ModelResult]]]: The baseline model result and the list of taxonomic model results.
@@ -616,6 +627,7 @@ def train_baseline_and_taxonomic_models(
         "lrt_pvalue": None,
         "wald_statistic": list(baseline_result.wald_stats),
         "wald_pvalue": list(baseline_result.wald_pvalue),
+        "sequence_duplication_threshold": args.sequence_duplication_threshold,
     }
     save_lr_models(experiment_base, DATA_SCHEME, "baseline", MODEL_SIZE, baseline_result.model, baseline_metadata)
 
@@ -641,6 +653,7 @@ def train_baseline_and_taxonomic_models(
             "lrt_pvalue": taxonomic_model_result.lrt_pvalue,
             "wald_statistic": list(taxonomic_model_result.wald_stats) if taxonomic_model_result.wald_stats is not None else [],
             "wald_pvalue": list(taxonomic_model_result.wald_pvalue) if taxonomic_model_result.wald_pvalue is not None else [],
+            "sequence_duplication_threshold": args.sequence_duplication_threshold,
         }
         save_lr_models(experiment_base, DATA_SCHEME, taxonomy, MODEL_SIZE, taxonomic_model_result.model, taxonomic_model_metadata)
         taxonomic_results.append((taxonomy, taxonomic_model_result))
@@ -779,7 +792,7 @@ def check_training_eligibility(labels: np.ndarray, sample_indices: np.ndarray) -
     return True
 
 
-def train_all_taxonomy_pairs(
+def train_and_save_all_taxonomy_pairs(
     experiment_base: str,
     features: np.ndarray,
     labels: np.ndarray,
@@ -896,6 +909,7 @@ def main():
         LOGGER.info(f"Taxonomy Search Start Index: {args.taxonomy_search_start_index}")
     if args.taxonomy_search_end_index is not None:
         LOGGER.info(f"Taxonomy Search End Index: {args.taxonomy_search_end_index}")
+    LOGGER.info(f"Sequence Duplication Threshold: {args.sequence_duplication_threshold}")
     LOGGER.info("---------------------------------------------------------------------------")
 
     LOGGER.info("Loading HF datasets...")
@@ -905,23 +919,23 @@ def main():
     pile_dataset, memories_dataset = construct_derived_features(pile_dataset, memories_dataset)
 
     LOGGER.info("Generating taxonomy categories for each sample...")
-    taxonomy_func = taxonomy_function()
+    taxonomy_func = taxonomy_function(args.sequence_duplication_threshold)
     taxonomy_categories = pile_dataset.apply(taxonomy_func, axis=1)
 
     features, labels = normalize_dataset(pile_dataset)
 
     LOGGER.info("Calculating correlation coefficients of base + taxonomic features...")
-    correlation_results = calculate_all_correlation_coefficients(features, labels, taxonomy_categories)
+    correlation_results = calculate_all_correlation_coefficients(features, labels, taxonomy_categories, args)
     save_correlation_coefficients(experiment_base, DATA_SCHEME, MODEL_SIZE, correlation_results)
 
     LOGGER.info("Training baseline and taxonomic models...")
-    baseline_result, _ = train_baseline_and_taxonomic_models(experiment_base, features, labels, taxonomy_categories)
+    baseline_result, _ = train_and_save_baseline_and_taxonomic_models(experiment_base, features, labels, taxonomy_categories, args)
 
     LOGGER.info("Generating taxonomy quantile thresholds...")
     taxonomy_thresholds = generate_taxonomy_quantile_thresholds(memories_dataset)
 
     LOGGER.info("Starting to train all taxonomy pairs...")
-    train_all_taxonomy_pairs(
+    train_and_save_all_taxonomy_pairs(
         experiment_base,
         features,
         labels,

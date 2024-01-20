@@ -84,19 +84,21 @@ TAXONOMY_SEARCH_FEATURES = [
 """
 Taxonomy Function and Parameters
 """
-SEQUENCE_DUPLICATE_THRESHOLD = 10
 
 
-def taxonomy_function() -> Callable[[pd.Series], str]:
+def taxonomy_function(sequence_duplication_threshold: int = 10) -> Callable[[pd.Series], str]:
     """
     Get the taxonomy function for each sample.
+
+    Args:
+        sequence_duplication_threshold (int, optional): The threshold to classify a sample as recitation. Defaults to 10.
 
     Returns:
         Callable[[pd.Series], str]: The taxonomy function.
     """
 
     def classify_row(row: pd.Series) -> str:
-        if row.sequence_duplicates > SEQUENCE_DUPLICATE_THRESHOLD:
+        if row.sequence_duplicates > sequence_duplication_threshold:
             return "recitation"
         if row.is_templating:
             return "reconstruction"
