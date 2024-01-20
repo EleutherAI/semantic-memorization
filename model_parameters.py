@@ -16,6 +16,7 @@ ENTROPY_HF_DATASET_NAME = "usvsnsp/semantic-memorization-entropies"
 Feature Catalog
 """
 CONTINUOUS_FEATURE_COLUMNS = [
+    "sequence_duplicates",
     "max_frequency",
     "avg_frequency",
     "min_frequency",

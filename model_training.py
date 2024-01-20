@@ -20,9 +20,7 @@ from sklearn.metrics import roc_auc_score, average_precision_score, log_loss
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from tqdm import tqdm
-
-# Repo - https://github.com/jettify/xicorrelation
-from xicorrelation import xicorr as xi_correlation
+from xicorpy import compute_xi_correlation as xi_correlation  # https://swarnakumar.github.io/xicorpy/xi/
 
 from model_parameters import (
     CATEGORICAL_FEATURE_COLUMNS,
@@ -329,11 +327,12 @@ def calculate_correlation_coefficients(features: np.ndarray, labels: np.ndarray)
         feature = features[:, i]
         pearson_result = pearson_correlation(feature, labels, alternative="two-sided")
         spearman_result = spearman_correlation(feature, labels, alternative="two-sided")
-        xi_result = xi_correlation(feature, labels)
+        xi_result = xi_correlation(feature, labels, get_modified_xi=False, get_p_values=True)
+        xi_statistic, xi_pvalue = xi_result[0][0, 0], xi_result[1][0, 0]
 
         pearsons.append((pearson_result.statistic, pearson_result.pvalue))
         spearmans.append((spearman_result.statistic, spearman_result.pvalue))
-        xis.append((xi_result.correlation, xi_result.pvalue))
+        xis.append((xi_statistic, xi_pvalue))
 
     return pearsons, spearmans, xis
 
@@ -752,6 +751,34 @@ def generate_optimal_taxonomy_candidate(feature_1, threshold_1, feature_2, thres
     return classify_row
 
 
+def check_training_eligibility(labels: np.ndarray, sample_indices: np.ndarray) -> bool:
+    """
+    Check if model training is availabile based on the label prior. The threshold
+    could be extreme where they have no samples or only one class.
+
+    Args:
+        labels (np.ndarray): The labels.
+        sample_indices (np.ndarray): The sample indices.
+
+    Returns:
+        bool: True if training is available, False otherwise.
+    """
+    if len(sample_indices) == 0:
+        LOGGER.info("Taxonomy candidate has no samples")
+        return False
+
+    sample_labels = labels[sample_indices]
+    num_samples = len(sample_labels)
+    num_positives = (sample_labels == 1).astype(int).sum()
+    num_negatives = num_samples - num_positives
+
+    if num_positives == 0 or num_negatives == 0:
+        LOGGER.info(f"Taxonomy candidate has no samples for one of the classes: {num_positives} positives | {num_negatives} negatives")
+        return False
+
+    return True
+
+
 def train_all_taxonomy_pairs(
     experiment_base: str,
     features: np.ndarray,
@@ -812,8 +839,7 @@ def train_all_taxonomy_pairs(
 
         for taxonomy in ["taxonomy_1", "taxonomy_2", "taxonomy_3"]:
             sample_indices = taxonomy_categories.index[taxonomy_categories == taxonomy]
-            if len(sample_indices) == 0:
-                LOGGER.info(f"Skipping {taxonomy} since there are no samples; this could be due to the quantile threshold being too high.")
+            if not check_training_eligibility(labels, sample_indices):
                 continue
 
             LOGGER.info(f"Training {taxonomy} model...")
