@@ -335,7 +335,7 @@ def calculate_correlation_coefficients(features: np.ndarray, labels: np.ndarray)
         pearson_result = pearson_correlation(feature, labels, alternative="two-sided")
         spearman_result = spearman_correlation(feature, labels, alternative="two-sided")
         xi_result = xi_correlation(feature, labels, get_modified_xi=False, get_p_values=True)
-        xi_statistic, xi_pvalue = xi_result[0][0, 0], xi_result[1][0, 0]
+        xi_statistic, xi_pvalue = float(xi_result[0][0, 0]), float(xi_result[1][0, 0])
 
         pearsons.append((pearson_result.statistic, pearson_result.pvalue))
         spearmans.append((spearman_result.statistic, spearman_result.pvalue))
