@@ -185,7 +185,7 @@ def normalize_dataset(pile_dataset: pd.DataFrame) -> Tuple[np.ndarray, np.ndarra
     return features, labels
 
 
-def split_dataset(features, labels) -> Tuple[Dataset, Dataset, Dataset]:
+def split_dataset(features, labels) -> Optional[Tuple[Dataset, Dataset, Dataset]]:
     """
     Split the dataset into training, validation, and test sets.
 
@@ -194,37 +194,41 @@ def split_dataset(features, labels) -> Tuple[Dataset, Dataset, Dataset]:
         labels (np.ndarray): The labels.
 
     Returns:
-        Tuple[np.ndarray, np.ndarray, np.ndarray]: The training features, training labels, and training indices.
-        Tuple[np.ndarray, np.ndarray, np.ndarray]: The validation features, validation labels, and validation indices.
-        Tuple[np.ndarray, np.ndarray, np.ndarray]: The test features, test labels, and test indices.
+        Optional[Tuple[Dataset, Dataset, Dataset]]: The training, validation, and test sets.
     """
-    LOGGER.info(f"Split datasets into {TRAIN_SIZE * 100}% training, {VALIDATION_SIZE * 100}% validation, and {TEST_SIZE * 100}% test")
-
-    train_features, remain_features, train_labels, remain_labels = train_test_split(
-        features,
-        labels,
-        test_size=1 - TRAIN_SIZE,
-        random_state=GLOBAL_SEED,
-        stratify=labels,
+    LOGGER.info(
+        f"Splitting datasets into {int(TRAIN_SIZE * 100)}% training, {int(VALIDATION_SIZE * 100)}% validation, {int(TEST_SIZE * 100)}% test..."
     )
 
-    validation_features, test_features, validation_labels, test_labels = train_test_split(
-        remain_features,
-        remain_labels,
-        test_size=TEST_SIZE / (TEST_SIZE + VALIDATION_SIZE),
-        random_state=GLOBAL_SEED,
-        stratify=remain_labels,
-    )
+    try:
+        train_features, remain_features, train_labels, remain_labels = train_test_split(
+            features,
+            labels,
+            test_size=1 - TRAIN_SIZE,
+            random_state=GLOBAL_SEED,
+            stratify=labels,
+        )
 
-    LOGGER.info(f"Training set size: {len(train_features)}")
-    LOGGER.info(f"Validation set size: {len(validation_features)}")
-    LOGGER.info(f"Test set size: {len(test_features)}")
+        validation_features, test_features, validation_labels, test_labels = train_test_split(
+            remain_features,
+            remain_labels,
+            test_size=TEST_SIZE / (TEST_SIZE + VALIDATION_SIZE),
+            random_state=GLOBAL_SEED,
+            stratify=remain_labels,
+        )
 
-    return (
-        (train_features, train_labels),
-        (validation_features, validation_labels),
-        (test_features, test_labels),
-    )
+        LOGGER.info(f"Training set size: {len(train_features)}")
+        LOGGER.info(f"Validation set size: {len(validation_features)}")
+        LOGGER.info(f"Test set size: {len(test_features)}")
+
+        return (
+            (train_features, train_labels),
+            (validation_features, validation_labels),
+            (test_features, test_labels),
+        )
+    except Exception as e:
+        LOGGER.error(f"Dataset splitting failed with Exception {e}")
+        return None
 
 
 def calculate_label_priors(labels: np.ndarray):
@@ -467,7 +471,7 @@ def train_lr_model(
 def train_baseline_model(
     features: np.ndarray,
     labels: np.ndarray,
-) -> ModelResult:
+) -> Optional[ModelResult]:
     """
     Train the baseline model.
 
@@ -476,11 +480,16 @@ def train_baseline_model(
         labels (np.ndarray): The labels.
 
     Returns:
-        ModelResult: The baseline model result.
+        Optional[ModelResult]: The baseline model result.
     """
     calculate_label_priors(labels)
 
-    train, _, test = split_dataset(features, labels)
+    datasets = split_dataset(features, labels)
+    if datasets is None:
+        LOGGER.error("Dataset splitting failed, returning a null model...")
+        return None
+
+    train, _, test = datasets
     train_features, train_labels = train
 
     LOGGER.info("Using test set as the evaluation set...")
@@ -520,7 +529,7 @@ def train_taxonomic_model(
     labels: np.ndarray,
     baseline_model: LogisticRegression,
     is_searching_for_optimal_taxonomy: bool = False,
-) -> ModelResult:
+) -> Optional[ModelResult]:
     """
     Train the taxonomic model.
 
@@ -534,7 +543,12 @@ def train_taxonomic_model(
     """
     calculate_label_priors(labels)
 
-    train, validation, test = split_dataset(features, labels)
+    datasets = split_dataset(features, labels)
+    if datasets is None:
+        LOGGER.error("Dataset splitting failed, returning a null model...")
+        return None
+
+    train, validation, test = datasets
     train_features, train_labels = train
 
     if is_searching_for_optimal_taxonomy:
@@ -588,7 +602,7 @@ def train_and_save_baseline_and_taxonomic_models(
     labels: np.ndarray,
     taxonomy_categories: pd.Series,
     args: Namespace,
-) -> Tuple[ModelResult, List[Tuple[str, ModelResult]]]:
+) -> Optional[Tuple[ModelResult, List[Tuple[str, ModelResult]]]]:
     """
     Train and save the baseline and taxonomic models.
 
@@ -600,10 +614,14 @@ def train_and_save_baseline_and_taxonomic_models(
         args (Namespace): The command line arguments.
 
     Returns:
-        Tuple[ModelResult, List[Tuple[str, ModelResult]]]: The baseline model result and the list of taxonomic model results.
+        Optional[Tuple[ModelResult, List[Tuple[str, ModelResult]]]]: The baseline model result and the taxonomic model results.
     """
     LOGGER.info("Training the baseline model with all data...")
     baseline_result = train_baseline_model(features, labels)
+
+    if baseline_result is None:
+        LOGGER.error("Baseline model is null, skipping...")
+        return None
 
     LOGGER.info("Saving baseline model results...")
     baseline_metadata = {
@@ -631,6 +649,10 @@ def train_and_save_baseline_and_taxonomic_models(
             taxonomic_labels,
             baseline_result.model,
         )
+
+        if taxonomic_model_result is None:
+            LOGGER.error(f"{taxonomy}-partitioned model is null, skipping...")
+            continue
 
         LOGGER.info(f"Saving {taxonomy}-partitioned model results...")
         taxonomic_model_metadata = {
@@ -840,11 +862,12 @@ def train_and_save_all_taxonomy_pairs(
         taxonomy_categories = pile_dataset.apply(taxonomy_func, axis=1)
 
         for taxonomy in ["taxonomy_1", "taxonomy_2", "taxonomy_3"]:
+            LOGGER.info(f"Training {taxonomy} model...")
+
             sample_indices = taxonomy_categories.index[taxonomy_categories == taxonomy]
             if not check_training_eligibility(labels, sample_indices):
                 continue
 
-            LOGGER.info(f"Training {taxonomy} model...")
             taxonomic_features, taxonomic_labels = features[sample_indices, :], labels[sample_indices]
             taxonomic_model_result = train_taxonomic_model(
                 taxonomic_features,
@@ -852,6 +875,10 @@ def train_and_save_all_taxonomy_pairs(
                 baseline_model,
                 is_searching_for_optimal_taxonomy=True,
             )
+
+            if taxonomic_model_result is None:
+                LOGGER.error(f"{taxonomy} model is null, skipping...")
+                continue
 
             LOGGER.info(f"Saving {taxonomy} model results...")
             taxonomic_model_metadata = {
@@ -918,7 +945,12 @@ def main():
     save_correlation_coefficients(experiment_base, DATA_SCHEME, MODEL_SIZE, correlation_results)
 
     LOGGER.info("Training baseline and taxonomic models...")
-    baseline_result, _ = train_and_save_baseline_and_taxonomic_models(experiment_base, features, labels, taxonomy_categories, args)
+    model_results = train_and_save_baseline_and_taxonomic_models(experiment_base, features, labels, taxonomy_categories, args)
+    if model_results is None:
+        LOGGER.error("Model results are null, exiting...")
+        return
+
+    baseline_result, _ = model_results
 
     LOGGER.info("Generating taxonomy quantile thresholds...")
     taxonomy_thresholds = generate_taxonomy_quantile_thresholds(memories_dataset)
