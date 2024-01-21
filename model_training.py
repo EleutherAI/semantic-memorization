@@ -213,7 +213,7 @@ def split_dataset(features, labels) -> Tuple[Dataset, Dataset, Dataset]:
         remain_labels,
         test_size=TEST_SIZE / (TEST_SIZE + VALIDATION_SIZE),
         random_state=GLOBAL_SEED,
-        stratify=labels,
+        stratify=remain_labels,
     )
 
     LOGGER.info(f"Training set size: {len(train_features)}")
