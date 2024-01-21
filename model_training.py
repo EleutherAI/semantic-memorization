@@ -49,7 +49,7 @@ from model_parameters import (
 LOGGER = logging.getLogger("experiments")
 LOGGER.setLevel(logging.INFO)
 
-Dataset = Tuple[np.ndarray, np.ndarray, np.ndarray]
+Dataset = Tuple[np.ndarray, np.ndarray]
 
 
 @dataclass
@@ -199,13 +199,13 @@ def split_dataset(features, labels) -> Tuple[Dataset, Dataset, Dataset]:
         Tuple[np.ndarray, np.ndarray, np.ndarray]: The test features, test labels, and test indices.
     """
     LOGGER.info(f"Split datasets into {TRAIN_SIZE * 100}% training, {VALIDATION_SIZE * 100}% validation, and {TEST_SIZE * 100}% test")
-    indices = np.arange(len(features))
 
     train_features, remain_features, train_labels, remain_labels = train_test_split(
         features,
         labels,
         test_size=1 - TRAIN_SIZE,
         random_state=GLOBAL_SEED,
+        stratify=labels,
     )
 
     validation_features, test_features, validation_labels, test_labels = train_test_split(
@@ -213,18 +213,7 @@ def split_dataset(features, labels) -> Tuple[Dataset, Dataset, Dataset]:
         remain_labels,
         test_size=TEST_SIZE / (TEST_SIZE + VALIDATION_SIZE),
         random_state=GLOBAL_SEED,
-    )
-
-    train_indices, remain_indices = train_test_split(
-        indices,
-        test_size=1 - TRAIN_SIZE,
-        random_state=GLOBAL_SEED,
-    )
-
-    validation_indices, test_indices = train_test_split(
-        remain_indices,
-        test_size=TEST_SIZE / (TEST_SIZE + VALIDATION_SIZE),
-        random_state=GLOBAL_SEED,
+        stratify=labels,
     )
 
     LOGGER.info(f"Training set size: {len(train_features)}")
@@ -232,9 +221,9 @@ def split_dataset(features, labels) -> Tuple[Dataset, Dataset, Dataset]:
     LOGGER.info(f"Test set size: {len(test_features)}")
 
     return (
-        (train_features, train_labels, train_indices),
-        (validation_features, validation_labels, validation_indices),
-        (test_features, test_labels, test_indices),
+        (train_features, train_labels),
+        (validation_features, validation_labels),
+        (test_features, test_labels),
     )
 
 
@@ -491,11 +480,11 @@ def train_baseline_model(
     """
     calculate_label_priors(labels)
 
-    (train, _, test) = split_dataset(features, labels)
-    (train_features, train_labels, _) = train
+    train, _, test = split_dataset(features, labels)
+    train_features, train_labels = train
 
     LOGGER.info("Using test set as the evaluation set...")
-    (evaluation_features, evaluation_labels, _) = test
+    evaluation_features, evaluation_labels = test
 
     model, evaluation_predictions, train_roc_auc, train_pr_auc, evaluation_roc_auc, evaluation_pr_auc = train_lr_model(
         train_features,
@@ -545,17 +534,17 @@ def train_taxonomic_model(
     """
     calculate_label_priors(labels)
 
-    (train, validation, test) = split_dataset(features, labels)
-    (train_features, train_labels, _) = train
+    train, validation, test = split_dataset(features, labels)
+    train_features, train_labels = train
 
     if is_searching_for_optimal_taxonomy:
         evaluation_dataset_type = "validation"
         LOGGER.info("Using validation set as the evaluation set...")
-        (evaluation_features, evaluation_labels, _) = validation
+        evaluation_features, evaluation_labels = validation
     else:
         evaluation_dataset_type = "test"
         LOGGER.info("Using test set as the evaluation set...")
-        (evaluation_features, evaluation_labels, _) = test
+        evaluation_features, evaluation_labels = test
 
     model, evaluation_predictions, train_roc_auc, train_pr_auc, evaluation_roc_auc, evaluation_pr_auc = train_lr_model(
         train_features,
