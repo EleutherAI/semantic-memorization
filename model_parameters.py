@@ -10,7 +10,6 @@ EXPERIMENT_ROOT = "experiments"
 MODEL_SIZE = "12b"
 DATA_SCHEME = "deduped"
 GENERATION_HF_DATASET_NAME = "usvsnsp/generation-semantic-filters"
-ENTROPY_HF_DATASET_NAME = "usvsnsp/semantic-memorization-entropies"
 
 """
 Feature Catalog
@@ -23,16 +22,12 @@ CONTINUOUS_FEATURE_COLUMNS = [
     "median_frequency",
     "p25_frequency",
     "p75_frequency",
-    # These perplexities came from `generation-semantic-memorization-filters`, suffixed by `_generation`
-    "generation_perplexity_generation",
-    "prompt_perplexity_generation",
-    "sequence_perplexity_generation",
+    "generation_perplexity",
+    "prompt_perplexity",
+    "sequence_perplexity",
     "0_8_templates",
     "0_8_snowclones",
     "huffman_coding_length",
-    # entropy/gini came from `semantic-memorization-entropies`
-    "avg entropy",
-    "avg gini",
 ]
 CATEGORICAL_FEATURE_COLUMNS = [
     # This feature needs to be derived from the dataset
@@ -75,10 +70,8 @@ TAXONOMY_SEARCH_FEATURES = [
     "0_8_snowclones",
     "sequence_duplicates",
     "huffman_coding_length",
-    "avg entropy",
-    "avg gini",
     "is_templating",
-    "generation_perplexity_generation",
+    "generation_perplexity",
 ]
 
 """
@@ -98,7 +91,7 @@ def taxonomy_function(sequence_duplication_threshold: int = 10) -> Callable[[pd.
     """
 
     def classify_row(row: pd.Series) -> str:
-        if row.sequence_duplicates > sequence_duplication_threshold:
+        if row.sequence_duplicates >= sequence_duplication_threshold:
             return "recitation"
         if row.is_templating:
             return "reconstruction"

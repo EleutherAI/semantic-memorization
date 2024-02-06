@@ -33,7 +33,6 @@ from model_parameters import (
     MAX_MODEL_ITERATIONS,
     MODEL_SIZE,
     GENERATION_HF_DATASET_NAME,
-    ENTROPY_HF_DATASET_NAME,
     REG_NAME,
     REG_STRENGTH,
     TAXONOMIES,
@@ -110,38 +109,22 @@ def load_hf_dataset() -> Tuple[pd.DataFrame, pd.DataFrame]:
     Returns:
         Tuple[pd.DataFrame, pd.DataFrame]: The pile dataset and the memories dataset.
     """
-    pile_generation_dataset = load_dataset(GENERATION_HF_DATASET_NAME, split=f"pile_{DATA_SCHEME}_{MODEL_SIZE}").to_pandas()
-    pile_entropy_dataset = load_dataset(ENTROPY_HF_DATASET_NAME, revision=f"{DATA_SCHEME}_{MODEL_SIZE}", split="pile").to_pandas()
-    memories_generation_dataset = load_dataset(GENERATION_HF_DATASET_NAME, split=f"memories_{DATA_SCHEME}_{MODEL_SIZE}").to_pandas()
-    memories_entropy_dataset = load_dataset(ENTROPY_HF_DATASET_NAME, revision=f"{DATA_SCHEME}_{MODEL_SIZE}", split="memories").to_pandas()
+    pile_dataset = load_dataset(GENERATION_HF_DATASET_NAME, split=f"pile_{DATA_SCHEME}_{MODEL_SIZE}").to_pandas()
+    memories_dataset = load_dataset(GENERATION_HF_DATASET_NAME, split=f"memories_{DATA_SCHEME}_{MODEL_SIZE}").to_pandas()
 
-    LOGGER.info(f"Pile generation dataset shape: {pile_generation_dataset.shape}")
-    LOGGER.info(f"Pile entropy dataset shape: {pile_entropy_dataset.shape}")
-    LOGGER.info(f"Memories generation dataset shape: {memories_generation_dataset.shape}")
-    LOGGER.info(f"Memories entropy dataset shape: {memories_entropy_dataset.shape}")
+    LOGGER.info(f"Pile generation dataset shape: {pile_dataset.shape}")
+    LOGGER.info(f"Memories generation dataset shape: {memories_dataset.shape}")
 
     LOGGER.info("Merging generation and entropy datasets...")
-    pile_dataset = pd.merge(
-        left=pile_generation_dataset,
-        right=pile_entropy_dataset,
-        on="sequence_id",
-        # Some metrics are overlapping, suffixing them to differentiate the data source
-        suffixes=("_generation", "_entropy"),
-    )
-    memories_dataset = pd.merge(
-        left=memories_generation_dataset,
-        right=memories_entropy_dataset,
-        on="sequence_id",
-        suffixes=("_generation", "_entropy"),
-    )
 
     # Drop duplicate sequence IDs
     # Observation -- Only sequence ID `101275048` was duplicated. Some columns have different values, e.g. perplexity statistics.
     # TODO: Investigate data generation pipeline
     memories_dataset.drop_duplicates("sequence_id", keep="first", inplace=True)
+    pile_dataset.drop_duplicates("sequence_id", keep="first", inplace=True)
 
-    LOGGER.info(f"Merged pile dataset shape: {pile_dataset.shape}")
-    LOGGER.info(f"Merged memories dataset shape: {memories_dataset.shape}")
+    LOGGER.info(f"Final pile dataset shape: {pile_dataset.shape}")
+    LOGGER.info(f"Final memories dataset shape: {memories_dataset.shape}")
 
     return pile_dataset, memories_dataset
 
