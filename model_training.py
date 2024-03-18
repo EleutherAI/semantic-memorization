@@ -833,6 +833,7 @@ def save_taxonomy_search_models(
     base_path: str,
     data_scheme: str,
     model_size: str,
+    taxonomy_type: str,
     taxonomy_1_name: str,
     taxonomy_1_threshold_quantile: float,
     taxonomy_2_name: str,
@@ -847,6 +848,7 @@ def save_taxonomy_search_models(
         base_path (str): The base path where the models will be saved.
         data_scheme (str): The data scheme.
         model_size (str): The model size.
+        taxonomy_type (str): One of taxonomy_1, taxonomy_2 and taxonomy_3
         taxonomy_1_name (str): The name of the first taxonomy feature.
         taxonomy_1_threshold_quantile (float): The threshold quantile for the first taxonomy feature.
         taxonomy_2_name (str): The name of the second taxonomy feature.
@@ -862,7 +864,7 @@ def save_taxonomy_search_models(
     if not os.path.exists(full_path):
         os.makedirs(full_path)
 
-    model_path = os.path.join(full_path, "lr.pkl")
+    model_path = os.path.join(full_path, f"lr_{taxonomy_type}.pkl")
     with open(model_path, "wb") as file:
         pickle.dump(model, file)
 
@@ -876,7 +878,7 @@ def save_taxonomy_search_models(
         **model_metadata,
     }
 
-    metadata_path = os.path.join(full_path, "metadata.json")
+    metadata_path = os.path.join(full_path, f"metadata_{taxonomy_type}.json")
     with open(metadata_path, "w") as file:
         json.dump(metadata, file)
 
@@ -1073,6 +1075,7 @@ def train_and_save_all_taxonomy_pairs(
                 experiment_base,
                 DATA_SCHEME,
                 MODEL_SIZE,
+                taxonomy,
                 candidate_1_name,
                 candidate_1_threshold_quantile,
                 candidate_2_name,
