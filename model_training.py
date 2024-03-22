@@ -16,7 +16,13 @@ from scipy import stats
 from scipy.stats import pearsonr as pearson_correlation
 from scipy.stats import spearmanr as spearman_correlation
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import roc_auc_score, average_precision_score, log_loss
+from sklearn.metrics import (
+    roc_auc_score, 
+    average_precision_score, 
+    log_loss, precision_score, 
+    recall_score,
+    precision_recall_curve
+)
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from tqdm import tqdm
@@ -64,27 +70,10 @@ class ModelResult:
     validation_pr_auc: float
     wald_stats: List[float]
     wald_pvalue: List[float]
+    wald_columns: List[str]
     lrt_pvalue: Optional[float]
-    test_aggregate_roc_auc: Optional[float]
-    test_aggregate_pr_auc: Optional[float]
     baseline_test_roc_auc: Optional[float]
     baseline_test_pr_auc: Optional[float]
-
-@dataclass
-class CandidateModelResult:
-    model: LogisticRegression
-    train_roc_auc: float
-    train_pr_auc: float
-    validation_roc_auc: float
-    validation_pr_auc: float
-    test_aggregate_roc_auc: float
-    test_aggregate_pr_auc: float
-    test_recitation_roc_auc: float
-    test_recitation_pr_auc: float
-    test_reconstruction_roc_auc: float
-    test_reconstruction_pr_auc: float
-    test_recollection_roc_auc: float
-    test_recollection_pr_auc: float
 
 
 def parse_cli_args() -> Namespace:
@@ -194,7 +183,7 @@ def preprocess_dataset(pile_dataset: pd.DataFrame, normalize: bool = True) -> Tu
     processed_df = pd.DataFrame(
         continuous_features,
         columns=CONTINUOUS_FEATURE_COLUMNS,
-        index=categorical_features.index,
+        index=pile_dataset.index,
     )
     processed_df = processed_df.join(categorical_features)
 
@@ -231,17 +220,17 @@ def split_dataset(features: Union[np.ndarray, pd.DataFrame], labels: Union[np.nd
         return None
 
 
-def calculate_label_priors(labels: np.ndarray):
+def calculate_label_priors(labels: pd.Series):
     """
     Calculate the label priors.
 
     Args:
-        labels (np.ndarray): The labels.
+        labels (pd.Series): The labels.
 
     Returns:
         None
     """
-    prob_negatives = (labels == 0).astype(int).sum() / len(labels)
+    prob_negatives = (labels == 0).mean()
     prob_positives = 1 - prob_negatives
 
     LOGGER.info("Class Priors")
@@ -413,40 +402,30 @@ def save_correlation_coefficients(base_path: str, data_scheme: str, model_size: 
         json.dump(coefficients, file)
 
 
-def save_lr_models(base_path: str, data_scheme: str, taxonomy: str, model_size: str, model: LogisticRegression, model_metadata: Dict[Any, Any]):
+def save_models(save_path: str, model: LogisticRegression, model_metadata: Dict[Any, Any]):
     """
     Save the LR model and metadata to a pickle file.
 
     Args:
-        base_path (str): The base path to save the coefficients.
-        data_scheme (str): The data scheme.
-        taxonomy (str): The taxonomy.
-        model_size (str): The model size.
+        save_path (str): Path to save model data
         model (LogisticRegression): The model.
         model_metadata (Dict[Any, Any]): The model metadata.
 
     Returns:
-        None
+        (str) Path to folder of saved results
     """
-    full_path = f"{base_path}/{data_scheme}/{model_size}/{taxonomy}"
 
-    if not os.path.exists(full_path):
-        os.makedirs(full_path)
+    if not os.path.exists(save_path):
+        os.makedirs(save_path)
 
-    model_path = os.path.join(full_path, "lr.pkl")
+    model_path = os.path.join(save_path, f"lr.pkl")
     with open(model_path, "wb") as file:
         pickle.dump(model, file)
 
-    metadata = {
-        "data_scheme": data_scheme,
-        "taxonomy": taxonomy,
-        "model_size": model_size,
-        **model_metadata,
-    }
 
-    metadata_path = os.path.join(full_path, "metadata.json")
+    metadata_path = os.path.join(save_path, f"metadata.json")
     with open(metadata_path, "w") as file:
-        json.dump(metadata, file)
+        json.dump(model_metadata, file)
 
 
 def train_lr_model(
@@ -456,7 +435,7 @@ def train_lr_model(
     validation_labels: np.ndarray,
     test_features: np.ndarray, 
     test_labels: np.ndarray,
-) -> Tuple[LogisticRegression, np.ndarray, 
+) -> Tuple[LogisticRegression,
     Tuple[float, float], Tuple[float, float], Tuple[float, float]]:
     """
     Train the LR model.
@@ -470,7 +449,7 @@ def train_lr_model(
         validation_labels (np.ndarray): The evaluation labels.
 
     Returns:
-        Tuple[LogisticRegression, np.ndarray, float, float, float, float]: The trained model and test/evaluation metrics.
+        Tuple[LogisticRegression, (float, float), (float, float), (float, float)]: The trained model and test/evaluation metrics.
     """
     # Training with fixed parameters
     model = LogisticRegression(
@@ -502,7 +481,6 @@ def train_lr_model(
 
     return (
         model, 
-        test_predictions,
         (train_roc_auc, train_pr_auc),
         (validation_roc_auc, validation_pr_auc),
         (test_roc_auc, test_pr_auc),
@@ -510,46 +488,48 @@ def train_lr_model(
 
 
 def train_baseline_model(
-    features: np.ndarray,
-    labels: np.ndarray,
-    test_features: np.ndarray,
-    test_labels: np.ndarray
+    train_df: pd.DataFrame,
+    test_df: pd.DataFrame,
 ) -> Optional[ModelResult]:
     """
     Train the baseline model.
 
     Args:
-        features (np.ndarray): The features.
-        labels (np.ndarray): The labels.
-        test_features (np.ndarray): The test features.
-        test_labels (np.ndarray): The test labels.
+        train_df (pd.DataFrame): Pandas dataframe with train samples
+        test_df (pd.DataFrame): Pandas dataframe with test samples
 
     Returns:
         Optional[ModelResult]: The baseline model result.
     """
-    calculate_label_priors(labels)
+    
+    train_feature_df = train_df[CONTINUOUS_FEATURE_COLUMNS + CATEGORICAL_FEATURE_COLUMNS]
+    train_label_df = train_df['labels']
+    test_feature_df = test_df[CONTINUOUS_FEATURE_COLUMNS + CATEGORICAL_FEATURE_COLUMNS]
+    test_label_df = test_df['labels']
+    calculate_label_priors(train_label_df)
 
-    datasets = split_dataset(features, labels)
+    datasets = split_dataset(train_feature_df, train_label_df)
     if datasets is None:
         LOGGER.error("Dataset splitting failed, returning a null model...")
         return None
 
     train, validation = datasets
-    train_features, train_labels = train
-    validation_features, validation_labels = validation
+    train_feature_df, train_labels = train
+    validation_feature_df, validation_labels = validation
 
-    model, _, train_metrics, validation_metrics, test_metrics = train_lr_model(
-        train_features,
+    model, train_metrics, validation_metrics, test_metrics = train_lr_model(
+        train_feature_df,
         train_labels,
-        validation_features,
+        validation_feature_df,
         validation_labels,
-        test_features,
-        test_labels,
+        test_feature_df,
+        test_label_df,
     )
 
     try:
         LOGGER.info("Performing Wald Test...")
-        wald_stats, wald_pvalue = wald_test(model, test_features)
+        wald_stats, wald_pvalue = wald_test(model, test_feature_df)
+        wald_columns = [column for column in test_feature_df]
     except Exception as e:
         LOGGER.info(f"Wald Test failed with Exception {e}")
         wald_stats, wald_pvalue = [], []
@@ -568,81 +548,102 @@ def train_baseline_model(
         test_pr_auc=test_pr_auc,
         wald_stats=wald_stats,
         wald_pvalue=wald_pvalue,
+        wald_columns=wald_columns,
         # Not applicable since there are no alternative models to compare with, this is the baseline
         lrt_pvalue=None,
-        test_aggregate_roc_auc=None,
-        test_aggregate_pr_auc=None,
         baseline_test_roc_auc=None,
         baseline_test_pr_auc=None,
     )
 
 def train_taxonomic_model(
-    features: np.ndarray,
-    labels: np.ndarray,
-    test_aggregate_features: np.ndarray,
-    test_aggregate_labels: np.ndarray,
-    test_taxonomy_features: np.ndarray,
-    test_taxonomy_labels: np.ndarray,
+    train_df: pd.DataFrame,
+    test_df: pd.DataFrame,
+    taxonomy: str,
     baseline_model: LogisticRegression,
 ) -> Optional[ModelResult]:
     """
     Train the taxonomic model.
 
     Args:
-        features (np.ndarray): The features.
-        labels (np.ndarray): The labels.
-        test_aggregate_features (np.ndarray): The test aggregate features.
-        test_aggregate_labels (np.ndarray): The test aggregate labels.
-        test_taxonomy_features (np.ndarray): The test taxonomy features.
-        test_taxonomy_labels (np.ndarray): The test taxonomy labels.
+        train_df (pd.DataFrame): Pandas dataframe with train samples
+        test_df (pd.DataFrame): Pandas dataframe with test samples
+        taxonomy (str): Name of taxonomy being saved
         baseline_model (LogisticRegression): The baseline model.
 
     Returns:
-        ModelResult: The taxonomic model result.
+        Tuple[ModelResult, dict]: The taxonomic model result and model predictions
     """
-    calculate_label_priors(labels)
+    train_feature_df = train_df[CONTINUOUS_FEATURE_COLUMNS + CATEGORICAL_FEATURE_COLUMNS]
+    train_label_df = train_df['labels']
 
-    datasets = split_dataset(features, labels)
+    test_feature_df = test_df[test_df['curr_taxonomy'] == taxonomy][CONTINUOUS_FEATURE_COLUMNS + CATEGORICAL_FEATURE_COLUMNS]
+    test_label_df = test_df.loc[test_feature_df.index]['labels']
+
+    datasets = split_dataset(train_feature_df, train_label_df)
     if datasets is None:
         LOGGER.error("Dataset splitting failed, returning a null model...")
-        return None
+        return None, None
 
     train, validation = datasets
-    train_features, train_labels = train
-    validation_features, validation_labels = validation
+    train_feature_df, train_labels = train
+    validation_feature_df, validation_labels = validation
 
-    model, test_taxonomy_predictions, train_metrics, validation_metrics, test_metrics = train_lr_model(
-        train_features,
+    model, train_metrics, validation_metrics, test_metrics = train_lr_model(
+        train_feature_df,
         train_labels,
-        validation_features,
+        validation_feature_df,
         validation_labels,
-        test_taxonomy_features,
-        test_taxonomy_labels,
+        test_feature_df,
+        test_label_df,
     )
 
     train_roc_auc, train_pr_auc = train_metrics
     test_roc_auc, test_pr_auc = test_metrics
     validation_roc_auc, validation_pr_auc = validation_metrics
 
-    LOGGER.info("Running taxonomy model on the test aggregate set...")
-    test_aggregate_predictions = model.predict_proba(test_aggregate_features)[:, 1]
-    test_aggregate_roc_auc = roc_auc_score(test_aggregate_labels, test_aggregate_predictions)
-    test_aggregate_pr_auc = average_precision_score(test_aggregate_labels, test_aggregate_predictions)
-
     LOGGER.info("Running baseline model on the test taxonomy set...")
-    baseline_test_taxonomy_predictions = baseline_model.predict_proba(test_taxonomy_features)[:, 1]
-    baseline_test_taxonomy_roc_auc = roc_auc_score(test_taxonomy_labels, baseline_test_taxonomy_predictions)
-    baseline_test_taxonomy_pr_auc = average_precision_score(test_taxonomy_labels, baseline_test_taxonomy_predictions)
+    test_feature_df = test_df[CONTINUOUS_FEATURE_COLUMNS + CATEGORICAL_FEATURE_COLUMNS]
+    test_label_df = test_df['labels']
+    baseline_test_predictions = baseline_model.predict_proba(test_feature_df)[:, 1]
+    test_predictions = model.predict_proba(test_feature_df)[:, 1]
+    predictions = pd.DataFrame()
+    predictions['labels'] = test_label_df
+    predictions['taxonomy'] = test_df['curr_taxonomy']
+    predictions['base_taxonomy'] = test_df['base_taxonomy']
+    predictions['model_predictions'] = test_predictions
+    predictions['baseline_predictions'] = baseline_test_predictions
+
+    predictions_curr = predictions[predictions['taxonomy'] == taxonomy]
+
+    baseline_test_taxonomy_roc_auc = roc_auc_score(
+        predictions_curr['labels'], predictions_curr['baseline_predictions'])
+    baseline_test_taxonomy_pr_auc = average_precision_score(
+        predictions_curr['labels'], predictions_curr['baseline_predictions'])
 
     lrt_pvalue = None
-    wald_stats, wald_pvalue = [], []
+    wald_stats, wald_pvalue, wald_columns = [], [], []
 
     LOGGER.info("Performing Likelihood Ratio Test...")
-    lrt_pvalue = likelihood_ratio_test(baseline_test_taxonomy_predictions, test_taxonomy_predictions, test_taxonomy_labels)
+    lrt_pvalue = likelihood_ratio_test(
+        predictions_curr['baseline_predictions'], 
+        predictions_curr['model_predictions'],
+        predictions_curr['labels'],
+    )
 
     try:
         LOGGER.info("Performing Wald Test...")
-        wald_stats, wald_pvalue = wald_test(model, test_taxonomy_features)
+        uniques = test_feature_df.nunique().reset_index()
+        # We remove all features with same value across data, to avoid singular matrix on wald test
+        wald_columns = []
+        bad_columns = []
+        for row in uniques.itertuples():
+            if row._2 > 1:
+                wald_columns.append(row.index)
+            else:
+                bad_columns.append(row.index)
+        if len(bad_columns) != 0:
+            LOGGER.info(f"Ignoring features {bad_columns} while performing wald test, as their values are all the same")
+        wald_stats, wald_pvalue = wald_test(model, test_feature_df[wald_columns])
     except Exception as e:
         LOGGER.info(f"Wald Test failed with Exception {e}")
 
@@ -654,109 +655,126 @@ def train_taxonomic_model(
         validation_pr_auc=validation_pr_auc,
         test_roc_auc=test_roc_auc,
         test_pr_auc=test_pr_auc,
-        test_aggregate_roc_auc=test_aggregate_roc_auc,
-        test_aggregate_pr_auc=test_aggregate_pr_auc,
         baseline_test_roc_auc=baseline_test_taxonomy_roc_auc,
         baseline_test_pr_auc=baseline_test_taxonomy_pr_auc,
         wald_stats=wald_stats,
         wald_pvalue=wald_pvalue,
+        wald_columns=wald_columns,
         lrt_pvalue=lrt_pvalue,
-    )
+    ), predictions
 
 
-def train_taxonomic_candidate_model(
-    features: np.ndarray,
-    labels: np.ndarray,
-    test_aggregate_features: np.ndarray,
-    test_aggregate_labels: np.ndarray,
-    test_recitation_taxonomy_features: np.ndarray,
-    test_recitation_taxonomy_labels: np.ndarray,
-    test_reconstruction_taxonomy_features: np.ndarray,
-    test_reconstruction_taxonomy_labels: np.ndarray,
-    test_recollection_taxonomy_features: np.ndarray,
-    test_recollection_taxonomy_labels: np.ndarray,
-) -> Optional[CandidateModelResult]:
+def train_and_save_taxonomic_models(
+    train_df: pd.DataFrame,
+    test_df: pd.DataFrame,
+    taxonomies: List[str],
+    save_path: str,
+    baseline_model: LogisticRegression,
+    args: Namespace,
+    metadata: Dict[str, Any] = {},
+) -> Optional[List[Tuple[str, ModelResult]]]:
     """
-    Train the taxonomic candidate model.
+    Train and save the taxonomic models.
 
     Args:
-        features (np.ndarray): The features.
-        labels (np.ndarray): The labels.
-        test_aggregate_features (np.ndarray): The test aggregate features.
-        test_aggregate_labels (np.ndarray): The test aggregate labels.
-        test_recitation_taxonomy_features (np.ndarray): The test recitation taxonomy features.
-        test_recitation_taxonomy_labels (np.ndarray): The test recitation taxonomy labels.
-        test_reconstruction_taxonomy_features (np.ndarray): The test reconstruction taxonomy features.
-        test_reconstruction_taxonomy_labels (np.ndarray): The test reconstruction taxonomy labels.
-        test_recollection_taxonomy_features (np.ndarray): The test recollection taxonomy features.
-        test_recollection_taxonomy_labels (np.ndarray): The test recollection taxonomy labels.
+        train_df (pd.DataFrame): Pandas dataframe with train samples
+        test_df (pd.DataFrame): Pandas dataframe with test samples
+        taxonomies (List[str]): List of taxonomic categories
+        save_path (str): Path for saving the model to
+        baseline_model (LogisticRegression): Baseline model
+        args (Namespace): The command line arguments.
 
     Returns:
-        CandidateModelResult: The taxonomic candidate model result.
+        Optional[Tuple[ModelResult, List[Tuple[str, ModelResult]]]]: The baseline model result and the taxonomic model results.
     """
-    calculate_label_priors(labels)
 
-    datasets = split_dataset(features, labels)
-    if datasets is None:
-        LOGGER.error("Dataset splitting failed, returning a null model...")
+    taxonomic_results = []
+    if not check_training_eligibility(train_df, taxonomies):
+        LOGGER.info(f"Training not eligible for current taxonomy, exiting")
         return None
+    
+    predictions = pd.DataFrame()
+    for taxonomy in taxonomies:
+        taxonomy_train_df = train_df[train_df['curr_taxonomy'] == taxonomy]
+        tax_save_path = os.path.join(save_path, taxonomy)
 
-    train, validation = datasets
-    train_features, train_labels = train
-    validation_features, validation_labels = validation
+        LOGGER.info(f"Training {taxonomy}-partitioned model...")
+        LOGGER.info(f"Training size: {len(taxonomy_train_df)}")
+        calculate_label_priors(taxonomy_train_df['labels'])
+        LOGGER.info(f"Test size: {len(test_df[test_df['curr_taxonomy'] == taxonomy])}")
+        calculate_label_priors(test_df[test_df['curr_taxonomy'] == taxonomy]['labels'])
+        taxonomic_model_result, preds = train_taxonomic_model(
+            taxonomy_train_df,
+            test_df,
+            taxonomy,
+            baseline_model,
+        )
 
-    model, _, train_metrics, validation_metrics, test_metrics = train_lr_model(
-        train_features,
-        train_labels,
-        validation_features,
-        validation_labels,
-        test_aggregate_features,
-        test_aggregate_labels,
-    )
+        if taxonomic_model_result is None:
+            LOGGER.error(f"{taxonomy}-partitioned model is null, skipping...")
+            continue
 
-    train_roc_auc, train_pr_auc = train_metrics
-    test_aggregate_roc_auc, test_aggregate_pr_auc = test_metrics
-    validation_roc_auc, validation_pr_auc = validation_metrics
+        predictions[f'{taxonomy}_predictions'] = preds['model_predictions']
+        predictions['baseline_predictions'] = preds['baseline_predictions']
+        predictions['labels'] = preds['labels']
+        predictions['taxonomy'] = preds['taxonomy']
+        predictions['base_taxonomy'] = preds['base_taxonomy']
+        LOGGER.info(f"Saving {taxonomy}-partitioned model results...")
+        
+        taxonomic_model = taxonomic_model_result.model
+        taxonomic_model_metadata = {
+            **metadata,
+            "sequence_duplication_threshold": args.sequence_duplication_threshold,
+            "taxonomy": taxonomy,
+            **asdict(taxonomic_model_result, dict_factory=lambda x: {k: v for (k, v) in x if k != 'model'}),
+            **metadata
+        }
+        save_models(tax_save_path, taxonomic_model, taxonomic_model_metadata)
 
-    LOGGER.info("Running taxonomy candidate model on the test recitation set...")
-    test_recitation_predictions = model.predict_proba(test_recitation_taxonomy_features)[:, 1]
-    test_recitation_roc_auc = roc_auc_score(test_recitation_taxonomy_labels, test_recitation_predictions)
-    test_recitation_pr_auc = average_precision_score(test_recitation_taxonomy_labels, test_recitation_predictions)
+        taxonomic_results.append((taxonomy, taxonomic_model_result))
 
-    LOGGER.info("Running taxonomy candidate model on the test reconstruction set...")
-    test_reconstruction_predictions = model.predict_proba(test_reconstruction_taxonomy_features)[:, 1]
-    test_reconstruction_roc_auc = roc_auc_score(test_reconstruction_taxonomy_labels, test_reconstruction_predictions)
-    test_reconstruction_pr_auc = average_precision_score(test_reconstruction_taxonomy_labels, test_reconstruction_predictions)
+    predictions['model_predictions'] = predictions.apply(lambda x:x[f'{x["taxonomy"]}_predictions'], axis=1)
+    taxonomic_preds = {}
+    taxonomic_preds['recitation'] = predictions[predictions['base_taxonomy'] == 'recitation']
+    taxonomic_preds['reconstruction'] = predictions[predictions['base_taxonomy'] == 'reconstruction']
+    taxonomic_preds['recollection'] = predictions[predictions['base_taxonomy'] == 'recollection']
+    taxonomic_preds['aggregate'] = predictions
 
-    LOGGER.info("Running taxonomy candidate model on the test recollection set...")
-    test_recollection_predictions = model.predict_proba(test_recollection_taxonomy_features)[:, 1]
-    test_recollection_roc_auc = roc_auc_score(test_recollection_taxonomy_labels, test_recollection_predictions)
-    test_recollection_pr_auc = average_precision_score(test_recollection_taxonomy_labels, test_recollection_predictions)
+    LOGGER.info("Calculating Taxonomic metrics")
+    taxonomic_prediction_metrics = {}
+    for prediction in taxonomic_preds:
+        preds = taxonomic_preds[prediction]
+        for model_type in ['model', 'baseline']:
+            taxonomic_prediction_metrics[f'{model_type}_{prediction}_roc_auc'] = roc_auc_score(
+                preds['labels'], preds[f'{model_type}_predictions']
+            )
+            taxonomic_prediction_metrics[f'{model_type}_{prediction}_pr_auc'] = average_precision_score(
+                preds['labels'], preds[f'{model_type}_predictions']
+            )
+            taxonomic_prediction_metrics[f'{model_type}_{prediction}_precision_'] = precision_score(
+                preds['labels'], preds[f'{model_type}_predictions'].apply(lambda x:int(x>0.5))
+            )
+            taxonomic_prediction_metrics[f'{model_type}_{prediction}_recall_'] = recall_score(
+                preds['labels'], preds[f'{model_type}_predictions'].apply(lambda x:int(x>0.5))
+            )
+            precision, recall, thresholds = precision_recall_curve(
+                preds['labels'],
+                preds[f'{model_type}_predictions'],
+            )
+            taxonomic_prediction_metrics[f'{model_type}_{prediction}_pr_curve'] = [
+                precision.tolist(), recall.tolist(), thresholds.tolist()]
 
-    return CandidateModelResult(
-        model=model,
-        train_roc_auc=train_roc_auc,
-        train_pr_auc=train_pr_auc,
-        validation_roc_auc=validation_roc_auc,
-        validation_pr_auc=validation_pr_auc,
-        test_aggregate_roc_auc=test_aggregate_roc_auc,
-        test_aggregate_pr_auc=test_aggregate_pr_auc,
-        test_recitation_roc_auc=test_recitation_roc_auc,
-        test_recitation_pr_auc=test_recitation_pr_auc,
-        test_reconstruction_roc_auc=test_reconstruction_roc_auc,
-        test_reconstruction_pr_auc=test_reconstruction_pr_auc,
-        test_recollection_roc_auc=test_recollection_roc_auc,
-        test_recollection_pr_auc=test_recollection_pr_auc,
-    )
+    
+    # Saving taxonomic predictions
+    with open(os.path.join(save_path,"taxonomic_prediction_metrics.json"), 'w') as f:
+        json.dump(taxonomic_prediction_metrics, f)
+
+    return taxonomic_results
 
 def train_and_save_baseline_and_taxonomic_models(
     experiment_base: str,
-    train_features: np.ndarray,
-    train_labels: np.ndarray,
-    train_taxonomy_categories: pd.Series,
-    test_aggregate_features: np.ndarray,
-    test_aggregate_labels: np.ndarray,
-    test_taxonomy_categories: pd.Series,
+    train_df: pd.DataFrame,
+    test_df: pd.DataFrame,
     args: Namespace,
 ) -> Optional[Tuple[ModelResult, List[Tuple[str, ModelResult]]]]:
     """
@@ -764,12 +782,8 @@ def train_and_save_baseline_and_taxonomic_models(
 
     Args:
         experiment_base (str): The experiment base path.
-        train_features (np.ndarray): The train features.
-        train_labels (np.ndarray): The train labels.
-        train_taxonomy_categories (pd.Series): The train taxonomy categories.
-        test_aggregate_features (np.ndarray): The test aggregate features.
-        test_aggregate_labels (np.ndarray): The test aggregate labels.
-        test_taxonomy_categories (pd.Series): The test taxonomy categories.
+        train_df (pd.DataFrame): Pandas dataframe with train samples
+        test_df (pd.DataFrame): Pandas dataframe with test samples
         args (Namespace): The command line arguments.
 
     Returns:
@@ -777,111 +791,42 @@ def train_and_save_baseline_and_taxonomic_models(
     """
     LOGGER.info("Training the baseline model with all data...")
 
-    baseline_result = train_baseline_model(train_features, train_labels, test_aggregate_features, test_aggregate_labels)
+    baseline_result = train_baseline_model(train_df, test_df)
     if baseline_result is None:
         LOGGER.error("Baseline model is null, skipping...")
         return None
     baseline_model = baseline_result.model
 
+    metadata = {
+        "data_scheme": DATA_SCHEME,
+        "model_size": MODEL_SIZE,
+    }
     # hack to remove a field
     baseline_metadata = {
+        **metadata,
+        "taxonomy": "baseline",
         "sequence_duplication_threshold": args.sequence_duplication_threshold,
-        **asdict(baseline_result, dict_factory=lambda x: {k: v for (k, v) in x if k != 'model'})
+        **asdict(baseline_result, dict_factory=lambda x: {k: v for (k, v) in x if k != 'model'}),
     }
     LOGGER.info("Saving baseline model results...")
-    save_lr_models(experiment_base, DATA_SCHEME, "baseline", MODEL_SIZE, baseline_model, baseline_metadata)
+    baseline_save_path = f"{experiment_base}/{DATA_SCHEME}/{MODEL_SIZE}/baseline/"
+    save_models(baseline_save_path, baseline_model, baseline_metadata)
 
-    taxonomic_results = []
+    train_df['curr_taxonomy'] = train_df['base_taxonomy']
+    test_df['curr_taxonomy'] = test_df['base_taxonomy']
 
-    for taxonomy in TAXONOMIES:
-        train_sample_indices = train_taxonomy_categories.index[train_taxonomy_categories == taxonomy]
-        train_taxonomic_features, train_taxonomic_labels = train_features[train_sample_indices, :], train_labels[train_sample_indices]
-
-        test_sample_indices = test_taxonomy_categories.index[test_taxonomy_categories == taxonomy]
-        test_taxonomic_features = test_aggregate_features[test_sample_indices, :]
-        test_taxonomic_labels = test_aggregate_labels[test_sample_indices]
-
-        LOGGER.info(f"Training {taxonomy}-partitioned model...")
-        taxonomic_model_result = train_taxonomic_model(
-            train_taxonomic_features,
-            train_taxonomic_labels,
-            test_aggregate_features,
-            test_aggregate_labels,
-            test_taxonomic_features,
-            test_taxonomic_labels,
-            baseline_result.model,
-        )
-
-        if taxonomic_model_result is None:
-            LOGGER.error(f"{taxonomy}-partitioned model is null, skipping...")
-            continue
-
-        LOGGER.info(f"Saving {taxonomy}-partitioned model results...")
-        
-        taxonomic_model = taxonomic_model_result.model
-        taxonomic_model_metadata = {
-            "sequence_duplication_threshold": args.sequence_duplication_threshold,
-            **asdict(taxonomic_model_result, dict_factory=lambda x: {k: v for (k, v) in x if k != 'model'})
-        }
-        save_lr_models(experiment_base, DATA_SCHEME, taxonomy, MODEL_SIZE, taxonomic_model, taxonomic_model_metadata)
-        taxonomic_results.append((taxonomy, taxonomic_model_result))
-
+    save_path = f"{experiment_base}/{DATA_SCHEME}/{MODEL_SIZE}/model_taxonomy/"
+    taxonomic_results = train_and_save_taxonomic_models(
+        train_df,
+        test_df,
+        TAXONOMIES,
+        save_path,
+        baseline_result.model,
+        args,
+        metadata=metadata,
+    )
     return baseline_result, taxonomic_results
-
-
-def save_taxonomy_search_models(
-    base_path: str,
-    data_scheme: str,
-    model_size: str,
-    taxonomy_type: str,
-    taxonomy_1_name: str,
-    taxonomy_1_threshold_quantile: float,
-    taxonomy_2_name: str,
-    taxonomy_2_threshold_quantile: float,
-    model: Any,
-    model_metadata: Dict[str, Any],
-) -> None:
-    """
-    Save the taxonomy search models to the specified location.
-
-    Args:
-        base_path (str): The base path where the models will be saved.
-        data_scheme (str): The data scheme.
-        model_size (str): The model size.
-        taxonomy_type (str): One of taxonomy_1, taxonomy_2 and taxonomy_3
-        taxonomy_1_name (str): The name of the first taxonomy feature.
-        taxonomy_1_threshold_quantile (float): The threshold quantile for the first taxonomy feature.
-        taxonomy_2_name (str): The name of the second taxonomy feature.
-        taxonomy_2_threshold_quantile (float): The threshold quantile for the second taxonomy feature.
-        model (Any): The trained model to be saved.
-        model_metadata (Dict[str, Any]): Additional metadata to be saved along with the model.
-
-    Returns:
-        None
-    """
-    full_path = f"{base_path}/{data_scheme}/{model_size}/taxonomy_search/{taxonomy_1_name}-{taxonomy_1_threshold_quantile}/{taxonomy_2_name}-{taxonomy_2_threshold_quantile}"
-
-    if not os.path.exists(full_path):
-        os.makedirs(full_path)
-
-    model_path = os.path.join(full_path, f"lr_{taxonomy_type}.pkl")
-    with open(model_path, "wb") as file:
-        pickle.dump(model, file)
-
-    metadata = {
-        "data_scheme": data_scheme,
-        "model_size": model_size,
-        "taxonomy_1_feature_name": taxonomy_1_name,
-        "taxonomy_1_threshold_quantile": taxonomy_1_threshold_quantile,
-        "taxonomy_2_feature_name": taxonomy_2_name,
-        "taxonomy_2_threshold_quantile": taxonomy_2_threshold_quantile,
-        **model_metadata,
-    }
-
-    metadata_path = os.path.join(full_path, f"metadata_{taxonomy_type}.json")
-    with open(metadata_path, "w") as file:
-        json.dump(metadata, file)
-
+    
 
 def generate_taxonomy_quantile_thresholds(memories_dataset: pd.DataFrame) -> DefaultDict:
     """
@@ -920,8 +865,8 @@ def generate_optimal_taxonomy_candidate(feature_1, threshold_1, feature_2, thres
     """
 
     def classify_row(row: pd.Series):
-        has_taxonomy_1 = row[feature_1] > threshold_1
-        has_taxonomy_2 = row[feature_2] > threshold_2
+        has_taxonomy_1 = row[feature_1] >= threshold_1
+        has_taxonomy_2 = row[feature_2] >= threshold_2
 
         if has_taxonomy_1:
             return "taxonomy_1"
@@ -934,43 +879,47 @@ def generate_optimal_taxonomy_candidate(feature_1, threshold_1, feature_2, thres
     return classify_row
 
 
-def check_training_eligibility(labels: np.ndarray, sample_indices: np.ndarray) -> bool:
+def check_training_eligibility(
+    train_df: pd.DataFrame, 
+    taxonomies: List[str],
+) -> bool:
     """
     Check if model training is availabile based on the label prior. The threshold
     could be extreme where they have no samples or only one class.
 
     Args:
-        labels (np.ndarray): The labels.
-        sample_indices (np.ndarray): The sample indices.
+        train_df (pd.DataFrame): Pandas dataframe with train samples
 
     Returns:
         bool: True if training is available, False otherwise.
     """
-    if len(sample_indices) == 0:
-        LOGGER.info("Taxonomy candidate has no samples")
-        return False
-
-    sample_labels = labels[sample_indices]
-    num_samples = len(sample_labels)
-    num_positives = (sample_labels == 1).astype(int).sum()
-    num_negatives = num_samples - num_positives
-
-    if num_positives == 0 or num_negatives == 0:
-        LOGGER.info(f"Taxonomy candidate has no samples for one of the classes: {num_positives} positives | {num_negatives} negatives")
-        return False
+    LOGGER.info("Checking Training eligibility")
+    for taxonomy in taxonomies:
+        tax_train_df = train_df[train_df['curr_taxonomy'] == taxonomy]
+        if len(tax_train_df) == 0:
+            LOGGER.info(f"{taxonomy} as no samples. Current permutation is not trainable")
+            return False
+        label_true = tax_train_df[tax_train_df['labels'] == 1]
+        label_false = tax_train_df[tax_train_df['labels'] == 0]
+        if len(label_true) == 0:
+            LOGGER.info(f"{taxonomy} has no positive samples. Current permutation is not trainable")
+            return False
+        if len(label_false) == 0:
+            LOGGER.info(f"{taxonomy} has no negative samples. Current permutation is not trainable")
+            return False
 
     return True
 
 
 def train_and_save_all_taxonomy_pairs(
     experiment_base: str,
-    train_features: np.ndarray,
-    train_labels: np.ndarray,
-    test_aggregate_features: np.ndarray,
-    test_aggregate_labels: np.ndarray,
-    test_taxonomy_categories: pd.Series,
-    taxonomy_thresholds: DefaultDict,
     train_df: pd.DataFrame,
+    test_df: pd.DataFrame,
+    pile_train_df: pd.DataFrame,
+    pile_test_df: pd.DataFrame,
+    baseline_model: LogisticRegression,
+    taxonomy_thresholds: DefaultDict,
+    args: Namespace,
     start_index: int = None,
     end_index: int = None,
 ) -> None:
@@ -979,13 +928,12 @@ def train_and_save_all_taxonomy_pairs(
 
     Args:
         experiment_base (str): The experiment base path.
-        train_features (np.ndarray): The train features.
-        train_labels (np.ndarray): The train labels.
-        test_aggregate_features (np.ndarray): The test aggregate features.
-        test_aggregate_labels (np.ndarray): The test aggregate labels.
-        test_taxonomy_categories (pd.Series): The test taxonomy categories.
-        taxonomy_thresholds (DefaultDict): The taxonomy thresholds.
         train_df (pd.DataFrame): The training dataset.
+        test_df (pd.DataFrame): The test dataset.
+        pile_train_df (pd.DataFrame): Train un-normalized dataset
+        pile_test_df (pd.DataFrame): Test un-normalized dataset
+        baseline_model (LogisticRegression): Baseline model
+        taxonomy_thresholds (DefaultDict): The taxonomy thresholds.
         start_index (int, optional): The starting index for the list of taxonomy search candidates. Defaults to None.
         end_index (int, optional): The ending index for the list of taxonomy search candidates. Defaults to None.
 
@@ -1010,21 +958,6 @@ def train_and_save_all_taxonomy_pairs(
             optimal_taxonomy_candidates = optimal_taxonomy_candidates[start_index:end_index]
         else:
             LOGGER.info("Subset indices are not valid, training all taxonomy candidates...")
-    
-    LOGGER.info("Generating the recitation test features and labels...")
-    test_recitation_indices = test_taxonomy_categories.index[test_taxonomy_categories == "recitation"]
-    test_recitation_features = test_aggregate_features[test_recitation_indices, :]
-    test_recitation_labels = test_aggregate_labels[test_recitation_indices]
-
-    LOGGER.info("Generating the reconstruction test features and labels...")
-    test_reconstruction_indices = test_taxonomy_categories.index[test_taxonomy_categories == "reconstruction"]
-    test_reconstruction_features = test_aggregate_features[test_reconstruction_indices, :]
-    test_reconstruction_labels = test_aggregate_labels[test_reconstruction_indices]
-
-    LOGGER.info("Generating the recollection test features and labels...")
-    test_recollection_indices = test_taxonomy_categories.index[test_taxonomy_categories == "recollection"]
-    test_recollection_features = test_aggregate_features[test_recollection_indices, :]
-    test_recollection_labels = test_aggregate_labels[test_recollection_indices]
 
     for i, (candidate_1, candidate_2) in enumerate(optimal_taxonomy_candidates):
         candidate_1_name, candidate_1_threshold_quantile = candidate_1
@@ -1037,52 +970,27 @@ def train_and_save_all_taxonomy_pairs(
 
         LOGGER.info("Generating taxonomy categories...")
         taxonomy_func = generate_optimal_taxonomy_candidate(candidate_1_name, candidate_1_threshold, candidate_2_name, candidate_2_threshold)
-        train_taxonomy_categories = train_df.apply(taxonomy_func, axis=1)
-
-        for taxonomy in ["taxonomy_1", "taxonomy_2", "taxonomy_3"]:
-            LOGGER.info(f"Training {taxonomy} model...")
-
-            train_sample_indices = train_taxonomy_categories.index[train_taxonomy_categories == taxonomy]
-            if not check_training_eligibility(train_labels, train_sample_indices):
-                continue
-
-            train_taxonomic_features, train_taxonomic_labels = train_features[train_sample_indices, :], train_labels[train_sample_indices]
-
-            taxonomic_model_result = train_taxonomic_candidate_model(
-                train_taxonomic_features,
-                train_taxonomic_labels,
-                test_aggregate_features,
-                test_aggregate_labels,
-                test_recitation_features,
-                test_recitation_labels,
-                test_reconstruction_features,
-                test_reconstruction_labels,
-                test_recollection_features,
-                test_recollection_labels,
-            )
-
-            if taxonomic_model_result is None:
-                LOGGER.error(f"{taxonomy} model is null, skipping...")
-                continue
-
-            LOGGER.info(f"Saving {taxonomy} model results...")
-
-            taxonomic_model = taxonomic_model_result.model
-            taxonomic_model_metadata = {
-                **asdict(taxonomic_model_result, dict_factory=lambda x: {k: v for (k, v) in x if k != 'model'})
-            }
-            save_taxonomy_search_models(
-                experiment_base,
-                DATA_SCHEME,
-                MODEL_SIZE,
-                taxonomy,
-                candidate_1_name,
-                candidate_1_threshold_quantile,
-                candidate_2_name,
-                candidate_2_threshold_quantile,
-                taxonomic_model,
-                taxonomic_model_metadata,
-            )
+        train_df['curr_taxonomy'] = pile_train_df.apply(taxonomy_func, axis=1)
+        test_df['curr_taxonomy'] = pile_test_df.apply(taxonomy_func, axis=1)
+        save_path = f"{experiment_base}/{DATA_SCHEME}/{MODEL_SIZE}/taxonomy_search/{candidate_1_name}"
+        save_path += f"-{candidate_1_threshold_quantile}/{candidate_2_name}-{candidate_2_threshold_quantile}/"
+        metadata = {
+            "data_scheme": DATA_SCHEME,
+            "model_size": MODEL_SIZE,
+            "taxonomy_1_feature_name": candidate_1_name,
+            "taxonomy_1_threshold_quantile": candidate_1_threshold,
+            "taxonomy_2_feature_name": candidate_2_name,
+            "taxonomy_2_threshold_quantile": candidate_2_threshold,
+        }
+        train_and_save_taxonomic_models(
+            train_df,
+            test_df,
+            ["taxonomy_1", "taxonomy_2", "taxonomy_3"],
+            save_path,
+            baseline_model,
+            args,
+            metadata=metadata,
+        )
 
 
 def main():
@@ -1117,53 +1025,36 @@ def main():
 
     LOGGER.info("Generating taxonomy categories for each sample...")
     taxonomy_func = taxonomy_function(args.sequence_duplication_threshold)
-    taxonomy_categories = pile_dataset.apply(taxonomy_func, axis=1)
 
     LOGGER.info("Generating natural language and code indices...")
     nl_indices = pile_dataset.index[pile_dataset[NATURAL_LANGUAGE_SCORE_COLUMN] >= NATURAL_LANGAUGE_SCORE_THRESHOLD]
     code_indices = pile_dataset.index[pile_dataset[NATURAL_LANGUAGE_SCORE_COLUMN] < NATURAL_LANGAUGE_SCORE_THRESHOLD]
 
     LOGGER.info("Pre-processing the dataset...")
-    features, labels, processed_df = preprocess_dataset(pile_dataset, normalize=True)
-
-    LOGGER.info("Calculating correlation coefficients of base + taxonomic features...")
-    correlation_results = calculate_all_correlation_coefficients(features, labels, taxonomy_categories, nl_indices, code_indices, args)
-    save_correlation_coefficients(experiment_base, DATA_SCHEME, MODEL_SIZE, correlation_results)
+    features, labels, data_df = preprocess_dataset(pile_dataset, normalize=True)
+    
+    # LOGGER.info("Calculating correlation coefficients of base + taxonomic features...")
+    # correlation_results = calculate_all_correlation_coefficients(features, labels, taxonomy_categories, nl_indices, code_indices, args)
+    # save_correlation_coefficients(experiment_base, DATA_SCHEME, MODEL_SIZE, correlation_results)
 
     LOGGER.info("Splitting the dataset into train and test aggregate sets...")
-    data_df = pd.DataFrame({
-        'features': features.tolist(),
-        'labels': labels,
-        'taxonomy': taxonomy_categories
-    })
-    data_df['stratify_labels'] = data_df['labels'].astype('str') + data_df['taxonomy'].astype('str')
+    data_df['labels'] = labels
+    data_df['base_taxonomy'] = pile_dataset.apply(taxonomy_func, axis=1)
+    data_df['stratify_labels'] = data_df['labels'].astype('str') + data_df['base_taxonomy'].astype('str')
 
     train_data, test_data = split_dataset(data_df, data_df['stratify_labels'])
     train_df, test_df = train_data[0], test_data[0]
-
-    train_features = np.array(train_df['features'].to_list())
-    train_labels = train_df['labels'].to_numpy()
-
-    test_aggregate_features = np.array(test_df['features'].to_list())
-    test_aggregate_labels = test_df['labels'].to_numpy()
-
-    train_taxonomy_categories = train_df['taxonomy'].reset_index(drop=True)
-    test_taxonomy_categories = test_df['taxonomy'].reset_index(drop=True)
-
-    train_processed_df = processed_df.loc[train_df.index].reset_index(drop=True)
+    pile_train_df = pile_dataset.loc[train_df.index]
+    pile_test_df = pile_dataset.loc[test_df.index]
 
     LOGGER.info("Training baseline and taxonomic models...")
-    model_results = train_and_save_baseline_and_taxonomic_models(
+    baseline_model_results, tax_model_results = train_and_save_baseline_and_taxonomic_models(
         experiment_base,
-        train_features,
-        train_labels,
-        train_taxonomy_categories,
-        test_aggregate_features,
-        test_aggregate_labels,
-        test_taxonomy_categories,
+        train_df,
+        test_df,
         args,
     )
-    if model_results is None:
+    if baseline_model_results is None or tax_model_results is None:
         LOGGER.error("Model results are null, exiting...")
         return
 
@@ -1173,13 +1064,13 @@ def main():
     LOGGER.info("Starting to train all taxonomy pairs...")
     train_and_save_all_taxonomy_pairs(
         experiment_base,
-        train_features,
-        train_labels,
-        test_aggregate_features,
-        test_aggregate_labels,
-        test_taxonomy_categories,
+        train_df,
+        test_df,
+        pile_train_df,
+        pile_test_df,
+        baseline_model_results.model,
         taxonomy_thresholds,
-        train_processed_df,
+        args,
         start_index=args.taxonomy_search_start_index,
         end_index=args.taxonomy_search_end_index,
     )
