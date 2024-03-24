@@ -733,7 +733,7 @@ def train_and_save_taxonomic_models(
 
         taxonomic_results.append((taxonomy, taxonomic_model_result))
 
-    predictions['model_predictions'] = predictions.apply(lambda x:x[f'{x["taxonomy"]}_predictions'], axis=1)
+    predictions['model_predictions'] = predictions.apply(lambda x: x[f'{x["taxonomy"]}_predictions'], axis=1)
     taxonomic_preds = {}
     taxonomic_preds['recitation'] = predictions[predictions['base_taxonomy'] == 'recitation']
     taxonomic_preds['reconstruction'] = predictions[predictions['base_taxonomy'] == 'reconstruction']
@@ -763,6 +763,9 @@ def train_and_save_taxonomic_models(
             )
             taxonomic_prediction_metrics[f'{model_type}_{prediction}_pr_curve'] = [
                 precision.tolist(), recall.tolist(), thresholds.tolist()]
+
+            taxonomic_prediction_metrics[f'{model_type}_{prediction}_probs'] = preds[f'{model_type}_predictions'].tolist()
+            taxonomic_prediction_metrics[f'{model_type}_{prediction}_labels'] = preds['labels'].tolist()
 
     
     # Saving taxonomic predictions
