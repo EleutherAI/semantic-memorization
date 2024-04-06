@@ -107,7 +107,7 @@ def taxonomy_function(sequence_duplication_threshold: int = 10) -> Callable[[pd.
 """
 Model Training Hyper-parameters
 """
-GLOBAL_SEED = 2024_03_21
+GLOBAL_SEED = 80
 
 TRAIN_SIZE = 0.8
 VALIDATION_SIZE = 0.1

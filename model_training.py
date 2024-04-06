@@ -58,10 +58,43 @@ LOGGER.setLevel(logging.INFO)
 
 Dataset = Tuple[Union[np.ndarray, pd.DataFrame], Union[np.ndarray, pd.DataFrame]]
 
+class PredictionModel(LogisticRegression):
+    def __init__(
+        self,
+        fit_intercept=True,
+        random_state=None,
+        max_iter=100,
+        penalty="l2",
+        C=1.0,
+        class_weight=None
+    ):
+        super().__init__(
+            fit_intercept=fit_intercept,
+            random_state=random_state,
+            max_iter=max_iter,
+            penalty=penalty,
+            C=C,
+            class_weight=class_weight,
+        )
+        self.has_threshold = False
+        self.threshold = None
+
+    def set_threshold(self, threshold: float):
+        self.threshold = threshold
+        self.has_threshold = True
+    
+    def predict(self, X):
+        threshold = 0.5
+        if self.has_threshold:
+            threshold = self.threshold
+
+        probs = super().predict_proba(X)[:, 1]
+        predictions = probs > threshold
+        return predictions
 
 @dataclass
 class ModelResult:
-    model: LogisticRegression
+    model: PredictionModel
     train_roc_auc: float
     train_pr_auc: float
     test_roc_auc: float
@@ -267,12 +300,12 @@ def likelihood_ratio_test(baseline_predictions: np.ndarray, taxonomic_prediction
     return pvalue
 
 
-def wald_test(model: LogisticRegression, features: np.ndarray) -> Tuple[float, List[float]]:
+def wald_test(model: PredictionModel, features: np.ndarray) -> Tuple[float, List[float]]:
     """
     Perform the Wald Test to determine the significance of the coefficients.
 
     Args:
-        model (LogisticRegression): The model.
+        model (PredictionModel): The model.
         features (np.ndarray): The features.
 
     Returns:
@@ -402,13 +435,13 @@ def save_correlation_coefficients(base_path: str, data_scheme: str, model_size: 
         json.dump(coefficients, file)
 
 
-def save_models(save_path: str, model: LogisticRegression, model_metadata: Dict[Any, Any]):
+def save_models(save_path: str, model: PredictionModel, model_metadata: Dict[Any, Any]):
     """
     Save the LR model and metadata to a pickle file.
 
     Args:
         save_path (str): Path to save model data
-        model (LogisticRegression): The model.
+        model (PredictionModel): The model.
         model_metadata (Dict[Any, Any]): The model metadata.
 
     Returns:
@@ -435,24 +468,26 @@ def train_lr_model(
     validation_labels: np.ndarray,
     test_features: np.ndarray, 
     test_labels: np.ndarray,
-) -> Tuple[LogisticRegression,
-    Tuple[float, float], Tuple[float, float], Tuple[float, float]]:
+) -> Tuple[PredictionModel,
+    Tuple[float, float], Tuple[float, float], Tuple[float, float], float]:
     """
     Train the LR model.
 
     Args:
         train_features (np.ndarray): The training features.
         train_labels (np.ndarray): The training labels.
-        test_features (np.ndarray): The evaluation features.
-        test_labels (np.ndarray): The evaluation labels.
-        validation_features (np.ndarray): The evaluation features.
-        validation_labels (np.ndarray): The evaluation labels.
+        test_features (np.ndarray): The test features.
+        test_labels (np.ndarray): The test labels.
+        validation_features (np.ndarray): The validation features.
+        validation_labels (np.ndarray): The validation labels.
+
 
     Returns:
-        Tuple[LogisticRegression, (float, float), (float, float), (float, float)]: The trained model and test/evaluation metrics.
+        Tuple[PredictionModel, (float, float), (float, float), (float, float), float]: The trained model, 
+            test/evaluation metrics and optimal threshold
     """
     # Training with fixed parameters
-    model = LogisticRegression(
+    model = PredictionModel(
         fit_intercept=FIT_INTERCEPT,
         random_state=GLOBAL_SEED,
         max_iter=MAX_MODEL_ITERATIONS,
@@ -470,6 +505,10 @@ def train_lr_model(
     validation_predictions = model.predict_proba(validation_features)[:, 1]
     validation_roc_auc = roc_auc_score(validation_labels, validation_predictions)
     validation_pr_auc = average_precision_score(validation_labels, validation_predictions)
+    valid_precision, valid_recall, valid_thresholds = precision_recall_curve(validation_labels, validation_predictions)
+    valid_f1_score = (1/(1/valid_precision + 1/valid_recall)).tolist()
+    threshold = valid_thresholds[np.argmax(valid_f1_score)]
+    model.set_threshold(threshold)
 
     test_predictions = model.predict_proba(test_features)[:, 1]
     test_roc_auc = roc_auc_score(test_labels, test_predictions)
@@ -559,7 +598,7 @@ def train_taxonomic_model(
     train_df: pd.DataFrame,
     test_df: pd.DataFrame,
     taxonomy: str,
-    baseline_model: LogisticRegression,
+    baseline_model: PredictionModel,
 ) -> Optional[ModelResult]:
     """
     Train the taxonomic model.
@@ -568,7 +607,7 @@ def train_taxonomic_model(
         train_df (pd.DataFrame): Pandas dataframe with train samples
         test_df (pd.DataFrame): Pandas dataframe with test samples
         taxonomy (str): Name of taxonomy being saved
-        baseline_model (LogisticRegression): The baseline model.
+        baseline_model (PredictionModel): The baseline model.
 
     Returns:
         Tuple[ModelResult, dict]: The taxonomic model result and model predictions
@@ -604,8 +643,8 @@ def train_taxonomic_model(
     LOGGER.info("Running baseline model on the test taxonomy set...")
     test_feature_df = test_df[CONTINUOUS_FEATURE_COLUMNS + CATEGORICAL_FEATURE_COLUMNS]
     test_label_df = test_df['labels']
-    baseline_test_predictions = baseline_model.predict_proba(test_feature_df)[:, 1]
-    test_predictions = model.predict_proba(test_feature_df)[:, 1]
+    baseline_test_predictions = baseline_model.predict(test_feature_df)
+    test_predictions = model.predict(test_feature_df)
     predictions = pd.DataFrame()
     predictions['labels'] = test_label_df
     predictions['taxonomy'] = test_df['curr_taxonomy']
@@ -669,7 +708,7 @@ def train_and_save_taxonomic_models(
     test_df: pd.DataFrame,
     taxonomies: List[str],
     save_path: str,
-    baseline_model: LogisticRegression,
+    baseline_model: PredictionModel,
     args: Namespace,
     metadata: Dict[str, Any] = {},
 ) -> Optional[List[Tuple[str, ModelResult]]]:
@@ -681,7 +720,7 @@ def train_and_save_taxonomic_models(
         test_df (pd.DataFrame): Pandas dataframe with test samples
         taxonomies (List[str]): List of taxonomic categories
         save_path (str): Path for saving the model to
-        baseline_model (LogisticRegression): Baseline model
+        baseline_model (PredictionModel): Baseline model
         args (Namespace): The command line arguments.
 
     Returns:
@@ -717,7 +756,7 @@ def train_and_save_taxonomic_models(
         predictions[f'{taxonomy}_predictions'] = preds['model_predictions']
         predictions['baseline_predictions'] = preds['baseline_predictions']
         predictions['labels'] = preds['labels']
-        predictions['taxonomy'] = preds['taxonomy']
+        predictions['model_taxonomy'] = preds['taxonomy']
         predictions['base_taxonomy'] = preds['base_taxonomy']
         LOGGER.info(f"Saving {taxonomy}-partitioned model results...")
         
@@ -733,7 +772,7 @@ def train_and_save_taxonomic_models(
 
         taxonomic_results.append((taxonomy, taxonomic_model_result))
 
-    predictions['model_predictions'] = predictions.apply(lambda x: x[f'{x["taxonomy"]}_predictions'], axis=1)
+    predictions['model_predictions'] = predictions.apply(lambda x: x[f'{x["model_taxonomy"]}_predictions'], axis=1)
     taxonomic_preds = {}
     taxonomic_preds['recitation'] = predictions[predictions['base_taxonomy'] == 'recitation']
     taxonomic_preds['reconstruction'] = predictions[predictions['base_taxonomy'] == 'reconstruction']
@@ -752,10 +791,10 @@ def train_and_save_taxonomic_models(
                 preds['labels'], preds[f'{model_type}_predictions']
             )
             taxonomic_prediction_metrics[f'{model_type}_{prediction}_precision_'] = precision_score(
-                preds['labels'], preds[f'{model_type}_predictions'].apply(lambda x:int(x>0.5))
+                preds['labels'], preds[f'{model_type}_predictions']
             )
             taxonomic_prediction_metrics[f'{model_type}_{prediction}_recall_'] = recall_score(
-                preds['labels'], preds[f'{model_type}_predictions'].apply(lambda x:int(x>0.5))
+                preds['labels'], preds[f'{model_type}_predictions']
             )
             precision, recall, thresholds = precision_recall_curve(
                 preds['labels'],
@@ -764,14 +803,12 @@ def train_and_save_taxonomic_models(
             taxonomic_prediction_metrics[f'{model_type}_{prediction}_pr_curve'] = [
                 precision.tolist(), recall.tolist(), thresholds.tolist()]
 
-            taxonomic_prediction_metrics[f'{model_type}_{prediction}_probs'] = preds[f'{model_type}_predictions'].tolist()
-            taxonomic_prediction_metrics[f'{model_type}_{prediction}_labels'] = preds['labels'].tolist()
-
     
     # Saving taxonomic predictions
     with open(os.path.join(save_path,"taxonomic_prediction_metrics.json"), 'w') as f:
         json.dump(taxonomic_prediction_metrics, f)
 
+    predictions.to_parquet(os.path.join(save_path, "predictions.parquet"))
     return taxonomic_results
 
 def train_and_save_baseline_and_taxonomic_models(
@@ -920,7 +957,7 @@ def train_and_save_all_taxonomy_pairs(
     test_df: pd.DataFrame,
     pile_train_df: pd.DataFrame,
     pile_test_df: pd.DataFrame,
-    baseline_model: LogisticRegression,
+    baseline_model: PredictionModel,
     taxonomy_thresholds: DefaultDict,
     args: Namespace,
     start_index: int = None,
@@ -935,7 +972,7 @@ def train_and_save_all_taxonomy_pairs(
         test_df (pd.DataFrame): The test dataset.
         pile_train_df (pd.DataFrame): Train un-normalized dataset
         pile_test_df (pd.DataFrame): Test un-normalized dataset
-        baseline_model (LogisticRegression): Baseline model
+        baseline_model (PredictionModel): Baseline model
         taxonomy_thresholds (DefaultDict): The taxonomy thresholds.
         start_index (int, optional): The starting index for the list of taxonomy search candidates. Defaults to None.
         end_index (int, optional): The ending index for the list of taxonomy search candidates. Defaults to None.
@@ -1026,6 +1063,7 @@ def main():
     LOGGER.info("Constructing derived features...")
     pile_dataset, memories_dataset = construct_derived_features(pile_dataset, memories_dataset)
 
+    pile_dataset = pd.concat([pile_dataset, memories_dataset], ignore_index=True)
     LOGGER.info("Generating taxonomy categories for each sample...")
     taxonomy_func = taxonomy_function(args.sequence_duplication_threshold)
 
@@ -1081,3 +1119,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
