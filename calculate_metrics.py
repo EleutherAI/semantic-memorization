@@ -35,13 +35,13 @@ def parse_cli_args():
         default=run_id_args_default,
     )
 
-    models_args_help = "The Pythia model to get the perplexities for. Valid options are: 70m, 160m, 410m, 1b, 1.4b, 2.8b, 6.9b, 12b"
+    models_args_help = "The Pythia model to get the metrics for. Valid options are: 70m, 160m, 410m, 1b, 1.4b, 2.8b, 6.9b, 12b, 12b.23000, 12b.43000, 12b.63000, 12b.83000, 12b.103000, 12b.123000"
     models_args_default = ["70m", "160m", "410m", "1b", "1.4b", "2.8b", "6.9b", "12b"]
     parser.add_argument(
         "--models",
         type=str,
         help=models_args_help,
-        choices=models_args_default,
+        choices=models_args_default + ["12b.23000", "12b.43000", "12b.63000", "12b.83000", "12b.103000", "12b.123000"],
         default=models_args_default,
     )
 
@@ -254,7 +254,7 @@ def load_precomputed_features(
             f"{scheme}_templates",
             semantic_duplicates_map
         ))
-    else:
+    elif not model_name[-1].isdigit(): # we do not have results of semantic snowclones for intermediate checkpoints
         hf_dataset_names.append((
             PrecomputedFeatureName.SEMANTIC_SNOWCLONES,
             f"usvsnsp/semantic-duplicates",

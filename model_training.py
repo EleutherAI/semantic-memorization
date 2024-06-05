@@ -15,7 +15,8 @@ from datasets import load_dataset
 from scipy import stats
 from scipy.stats import pearsonr as pearson_correlation
 from scipy.stats import spearmanr as spearman_correlation
-from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import KFold
+
 from sklearn.metrics import (
     roc_auc_score, 
     average_precision_score, 
@@ -53,44 +54,13 @@ from model_parameters import (
     taxonomy_function,
 )
 
+from model_utils import PredictionModel, expected_calibration_error
+
 LOGGER = logging.getLogger("experiments")
 LOGGER.setLevel(logging.INFO)
 
 Dataset = Tuple[Union[np.ndarray, pd.DataFrame], Union[np.ndarray, pd.DataFrame]]
 
-class PredictionModel(LogisticRegression):
-    def __init__(
-        self,
-        fit_intercept=True,
-        random_state=None,
-        max_iter=100,
-        penalty="l2",
-        C=1.0,
-        class_weight=None
-    ):
-        super().__init__(
-            fit_intercept=fit_intercept,
-            random_state=random_state,
-            max_iter=max_iter,
-            penalty=penalty,
-            C=C,
-            class_weight=class_weight,
-        )
-        self.has_threshold = False
-        self.threshold = None
-
-    def set_threshold(self, threshold: float):
-        self.threshold = threshold
-        self.has_threshold = True
-    
-    def predict(self, X):
-        threshold = 0.5
-        if self.has_threshold:
-            threshold = self.threshold
-
-        probs = super().predict_proba(X)[:, 1]
-        predictions = probs > threshold
-        return predictions
 
 @dataclass
 class ModelResult:
@@ -107,6 +77,7 @@ class ModelResult:
     lrt_pvalue: Optional[float]
     baseline_test_roc_auc: Optional[float]
     baseline_test_pr_auc: Optional[float]
+    expected_calibration_error: float
 
 
 def parse_cli_args() -> Namespace:
@@ -220,6 +191,9 @@ def preprocess_dataset(pile_dataset: pd.DataFrame, normalize: bool = True) -> Tu
     )
     processed_df = processed_df.join(categorical_features)
 
+    meta_features = pile_dataset[['ds_type', NATURAL_LANGUAGE_SCORE_COLUMN]]
+    processed_df = processed_df.join(meta_features)
+
     return features, labels, processed_df
 
 
@@ -266,9 +240,12 @@ def calculate_label_priors(labels: pd.Series):
     prob_negatives = (labels == 0).mean()
     prob_positives = 1 - prob_negatives
 
+    samples_negative = (labels == 0).sum()
+    samples_positive = len(labels) - samples_negative
+
     LOGGER.info("Class Priors")
-    LOGGER.info(f"Memorized (+): {prob_positives * 100:.4f}%")
-    LOGGER.info(f"Non-memorized (-): {prob_negatives * 100:.4f}%")
+    LOGGER.info(f"Memorized (+): {prob_positives * 100:.4f}%, {samples_positive} samples")
+    LOGGER.info(f"Non-memorized (-): {prob_negatives * 100:.4f}%, {samples_negative} samples")
     LOGGER.info("=" * 30)
 
 
@@ -331,7 +308,7 @@ def wald_test(model: PredictionModel, features: np.ndarray) -> Tuple[float, List
     return wald.tolist(), pvalues.tolist()
 
 
-def calculate_correlation_coefficients(features: np.ndarray, labels: np.ndarray) -> Tuple[List, List, List]:
+def calculate_correlation_coefficients(features: pd.DataFrame, labels: pd.Series) -> Tuple[List, List, List]:
     """
     Calculate the correlation coefficients for each feature.
 
@@ -344,38 +321,29 @@ def calculate_correlation_coefficients(features: np.ndarray, labels: np.ndarray)
     """
     pearsons, spearmans, xis = [], [], []
 
-    for i in range(features.shape[1]):
-        LOGGER.info(f"Calculating correlation coefficients on feature index {i}...")
-        feature = features[:, i]
-        pearson_result = pearson_correlation(feature, labels, alternative="two-sided")
-        spearman_result = spearman_correlation(feature, labels, alternative="two-sided")
-        xi_result = xi_correlation(feature, labels, get_modified_xi=False, get_p_values=True)
+    for col in features.columns:
+        LOGGER.info(f"Calculating correlation coefficients on feature index {col}...")
+        pearson_result = pearson_correlation(features[col], labels, alternative="two-sided")
+        spearman_result = spearman_correlation(features[col], labels, alternative="two-sided")
+        xi_result = xi_correlation(features[col].to_numpy(), labels.to_numpy(), get_modified_xi=False, get_p_values=True)
         xi_statistic, xi_pvalue = float(xi_result[0][0, 0]), float(xi_result[1][0, 0])
 
-        pearsons.append((pearson_result.statistic, pearson_result.pvalue))
-        spearmans.append((spearman_result.statistic, spearman_result.pvalue))
-        xis.append((xi_statistic, xi_pvalue))
+        pearsons.append((col, pearson_result.statistic, pearson_result.pvalue))
+        spearmans.append((col, spearman_result.statistic, spearman_result.pvalue))
+        xis.append((col, xi_statistic, xi_pvalue))
 
     return pearsons, spearmans, xis
 
 
 def calculate_all_correlation_coefficients(
-    features: np.ndarray,
-    labels: np.ndarray,
-    taxonomy_categories: pd.Series,
-    nl_indices: pd.Index,
-    code_indices: pd.Index,
+    dataset: pd.DataFrame,
     args: Namespace,
 ) -> DefaultDict:
     """
     Calculate the (baseline, code/nl, taxonomy) correlation coefficients for each feature.
 
     Args:
-        features (np.ndarray): The features.
-        labels (np.ndarray): The labels.
-        taxonomy_categories (pd.Series): The taxonomy categories.
-        nl_indices (pd.Index): The natural language indices.
-        code_indices (pd.Index): The code indices.
+        dataset: Dataset of features
         args (Namespace): The command line arguments.
 
     Returns:
@@ -384,30 +352,45 @@ def calculate_all_correlation_coefficients(
     coefficients = defaultdict(dict)
     coefficients["metadata"]["sequence_duplication_threshold"] = args.sequence_duplication_threshold
 
-    baseline_pearson, baseline_spearman, baseline_xi = calculate_correlation_coefficients(features, labels)
-    coefficients["baseline"]["pearson"] = baseline_pearson
-    coefficients["baseline"]["spearman"] = baseline_spearman
-    coefficients["baseline"]["xi"] = baseline_xi
+    feature_cols = CONTINUOUS_FEATURE_COLUMNS + CATEGORICAL_FEATURE_COLUMNS
 
-    nl_features, nl_labels = features[nl_indices, :], labels[nl_indices]
-    nl_pearson, nl_spearman, nl_xi = calculate_correlation_coefficients(nl_features, nl_labels)
-    coefficients["natural_language"]["pearson"] = nl_pearson
-    coefficients["natural_language"]["spearman"] = nl_spearman
-    coefficients["natural_language"]["xi"] = nl_xi
+    baseline_pearson, baseline_spearman, baseline_xi = calculate_correlation_coefficients(dataset[feature_cols], dataset["labels"])
+    coefficients["baseline"] = defaultdict(dict)
+    coefficients["baseline"]["all"]["pearson"] = baseline_pearson
+    coefficients["baseline"]["all"]["spearman"] = baseline_spearman
+    coefficients["baseline"]["all"]["xi"] = baseline_xi
 
-    code_features, code_labels = features[code_indices, :], labels[code_indices]
-    code_pearson, code_spearman, code_xi = calculate_correlation_coefficients(code_features, code_labels)
-    coefficients["code"]["pearson"] = code_pearson
-    coefficients["code"]["spearman"] = code_spearman
-    coefficients["code"]["xi"] = code_xi
+    nl_ds = dataset[dataset[NATURAL_LANGUAGE_SCORE_COLUMN] >= NATURAL_LANGAUGE_SCORE_THRESHOLD]
+    nl_pearson, nl_spearman, nl_xi = calculate_correlation_coefficients(nl_ds[feature_cols], nl_ds["labels"])
+    coefficients["baseline"]["natural_language"]["pearson"] = nl_pearson
+    coefficients["baseline"]["natural_language"]["spearman"] = nl_spearman
+    coefficients["baseline"]["natural_language"]["xi"] = nl_xi
+
+    code_ds = dataset[dataset[NATURAL_LANGUAGE_SCORE_COLUMN] < NATURAL_LANGAUGE_SCORE_THRESHOLD]
+    code_pearson, code_spearman, code_xi = calculate_correlation_coefficients(code_ds[feature_cols], code_ds["labels"])
+    coefficients["baseline"]["code"]["pearson"] = code_pearson
+    coefficients["baseline"]["code"]["spearman"] = code_spearman
+    coefficients["baseline"]["code"]["xi"] = code_xi
 
     for taxonomy in TAXONOMIES:
-        sample_indices = taxonomy_categories.index[taxonomy_categories == taxonomy]
-        taxonomic_features, taxonomic_labels = features[sample_indices, :], labels[sample_indices]
-        taxonomic_pearson, taxonomic_spearman, taxonomic_xi = calculate_correlation_coefficients(taxonomic_features, taxonomic_labels)
-        coefficients[taxonomy]["pearson"] = taxonomic_pearson
-        coefficients[taxonomy]["spearman"] = taxonomic_spearman
-        coefficients[taxonomy]["xi"] = taxonomic_xi
+        tax_all_ds = dataset[dataset["base_taxonomy"] == taxonomy]
+        taxonomic_pearson, taxonomic_spearman, taxonomic_xi = calculate_correlation_coefficients(tax_all_ds[feature_cols], tax_all_ds["labels"])
+        coefficients[taxonomy] = defaultdict(dict)
+        coefficients[taxonomy]["all"]["pearson"] = taxonomic_pearson
+        coefficients[taxonomy]["all"]["spearman"] = taxonomic_spearman
+        coefficients[taxonomy]["all"]["xi"] = taxonomic_xi
+
+        tax_nl_ds = tax_all_ds[tax_all_ds[NATURAL_LANGUAGE_SCORE_COLUMN] >= NATURAL_LANGAUGE_SCORE_THRESHOLD]
+        tax_nl_pearson, tax_nl_spearman, tax_nl_xi = calculate_correlation_coefficients(tax_nl_ds[feature_cols], tax_nl_ds["labels"])
+        coefficients[taxonomy]["natural_language"]["pearson"] = tax_nl_pearson
+        coefficients[taxonomy]["natural_language"]["spearman"] = tax_nl_spearman
+        coefficients[taxonomy]["natural_language"]["xi"] = tax_nl_xi
+
+        tax_code_ds = tax_all_ds[dataset[NATURAL_LANGUAGE_SCORE_COLUMN] < NATURAL_LANGAUGE_SCORE_THRESHOLD]
+        tax_code_pearson, tax_code_spearman, tax_code_xi = calculate_correlation_coefficients(tax_code_ds[feature_cols], tax_code_ds["labels"])
+        coefficients[taxonomy]["code"]["pearson"] = tax_code_pearson
+        coefficients[taxonomy]["code"]["spearman"] = tax_code_spearman
+        coefficients[taxonomy]["code"]["xi"] = tax_code_xi
 
     return coefficients
 
@@ -484,7 +467,7 @@ def train_lr_model(
 
     Returns:
         Tuple[PredictionModel, (float, float), (float, float), (float, float), float]: The trained model, 
-            test/evaluation metrics and optimal threshold
+            test/evaluation metrics and expected calibration error
     """
     # Training with fixed parameters
     model = PredictionModel(
@@ -505,24 +488,26 @@ def train_lr_model(
     validation_predictions = model.predict_proba(validation_features)[:, 1]
     validation_roc_auc = roc_auc_score(validation_labels, validation_predictions)
     validation_pr_auc = average_precision_score(validation_labels, validation_predictions)
-    valid_precision, valid_recall, valid_thresholds = precision_recall_curve(validation_labels, validation_predictions)
-    valid_f1_score = (1/(1/valid_precision + 1/valid_recall)).tolist()
-    threshold = valid_thresholds[np.argmax(valid_f1_score)]
-    model.set_threshold(threshold)
+    # valid_precision, valid_recall, valid_thresholds = precision_recall_curve(validation_labels, validation_predictions)
+    # valid_f1_score = (1/(1/valid_precision + 1/valid_recall)).tolist()
+    # threshold = valid_thresholds[np.argmax(valid_f1_score)]
+    # model.set_threshold(threshold)
 
-    test_predictions = model.predict_proba(test_features)[:, 1]
-    test_roc_auc = roc_auc_score(test_labels, test_predictions)
-    test_pr_auc = average_precision_score(test_labels, test_predictions)
+    test_predictions = model.predict_proba(test_features)
+    test_roc_auc = roc_auc_score(test_labels, test_predictions[:, 1])
+    test_pr_auc = average_precision_score(test_labels, test_predictions[:, 1])
 
     LOGGER.info(f"Training ROC AUC: {train_roc_auc:.4f} | Training PR AUC: {train_pr_auc:.4}")
     LOGGER.info(f"Test ROC AUC: {test_roc_auc:.4f} | Test PR AUC: {test_pr_auc:.4}")
     LOGGER.info(f"Validation ROC AUC: {validation_roc_auc:.4f} | Validation PR AUC: {validation_pr_auc:.4}")
-
+    
+    ece = expected_calibration_error(test_predictions, test_labels, M=10)
     return (
         model, 
         (train_roc_auc, train_pr_auc),
         (validation_roc_auc, validation_pr_auc),
         (test_roc_auc, test_pr_auc),
+        ece,
     )
 
 
@@ -556,7 +541,7 @@ def train_baseline_model(
     train_feature_df, train_labels = train
     validation_feature_df, validation_labels = validation
 
-    model, train_metrics, validation_metrics, test_metrics = train_lr_model(
+    model, train_metrics, validation_metrics, test_metrics, ece = train_lr_model(
         train_feature_df,
         train_labels,
         validation_feature_df,
@@ -592,6 +577,7 @@ def train_baseline_model(
         lrt_pvalue=None,
         baseline_test_roc_auc=None,
         baseline_test_pr_auc=None,
+        expected_calibration_error=ece
     )
 
 def train_taxonomic_model(
@@ -627,7 +613,7 @@ def train_taxonomic_model(
     train_feature_df, train_labels = train
     validation_feature_df, validation_labels = validation
 
-    model, train_metrics, validation_metrics, test_metrics = train_lr_model(
+    model, train_metrics, validation_metrics, test_metrics, ece = train_lr_model(
         train_feature_df,
         train_labels,
         validation_feature_df,
@@ -651,6 +637,8 @@ def train_taxonomic_model(
     predictions['base_taxonomy'] = test_df['base_taxonomy']
     predictions['model_predictions'] = test_predictions
     predictions['baseline_predictions'] = baseline_test_predictions
+    predictions['model_prediction_probs'] = model.predict_proba(test_feature_df).tolist()
+    predictions['base_prediction_probs'] = baseline_model.predict_proba(test_feature_df).tolist()
 
     predictions_curr = predictions[predictions['taxonomy'] == taxonomy]
 
@@ -700,6 +688,7 @@ def train_taxonomic_model(
         wald_pvalue=wald_pvalue,
         wald_columns=wald_columns,
         lrt_pvalue=lrt_pvalue,
+        expected_calibration_error=ece
     ), predictions
 
 
@@ -742,7 +731,7 @@ def train_and_save_taxonomic_models(
         calculate_label_priors(taxonomy_train_df['labels'])
         LOGGER.info(f"Test size: {len(test_df[test_df['curr_taxonomy'] == taxonomy])}")
         calculate_label_priors(test_df[test_df['curr_taxonomy'] == taxonomy]['labels'])
-        taxonomic_model_result, preds = train_taxonomic_model(
+        taxonomic_model_result, split_preds = train_taxonomic_model(
             taxonomy_train_df,
             test_df,
             taxonomy,
@@ -753,11 +742,13 @@ def train_and_save_taxonomic_models(
             LOGGER.error(f"{taxonomy}-partitioned model is null, skipping...")
             continue
 
-        predictions[f'{taxonomy}_predictions'] = preds['model_predictions']
-        predictions['baseline_predictions'] = preds['baseline_predictions']
-        predictions['labels'] = preds['labels']
-        predictions['model_taxonomy'] = preds['taxonomy']
-        predictions['base_taxonomy'] = preds['base_taxonomy']
+        predictions[f'{taxonomy}_predictions'] = split_preds['model_predictions']
+        predictions[f'{taxonomy}_prediction_probs'] = split_preds['model_prediction_probs']
+        predictions['baseline_predictions'] = split_preds['baseline_predictions']
+        predictions['baseline_prediction_probs'] = split_preds['base_prediction_probs']
+        predictions['labels'] = split_preds['labels']
+        predictions['model_taxonomy'] = split_preds['taxonomy']
+        predictions['base_taxonomy'] = split_preds['base_taxonomy']
         LOGGER.info(f"Saving {taxonomy}-partitioned model results...")
         
         taxonomic_model = taxonomic_model_result.model
@@ -773,6 +764,7 @@ def train_and_save_taxonomic_models(
         taxonomic_results.append((taxonomy, taxonomic_model_result))
 
     predictions['model_predictions'] = predictions.apply(lambda x: x[f'{x["model_taxonomy"]}_predictions'], axis=1)
+    predictions['model_prediction_probs'] = predictions.apply(lambda x: x[f'{x["model_taxonomy"]}_prediction_probs'], axis=1)
     taxonomic_preds = {}
     taxonomic_preds['recitation'] = predictions[predictions['base_taxonomy'] == 'recitation']
     taxonomic_preds['reconstruction'] = predictions[predictions['base_taxonomy'] == 'reconstruction']
@@ -780,30 +772,36 @@ def train_and_save_taxonomic_models(
     taxonomic_preds['aggregate'] = predictions
 
     LOGGER.info("Calculating Taxonomic metrics")
-    taxonomic_prediction_metrics = {}
+    taxonomic_prediction_metrics_agg = defaultdict(list)
     for prediction in taxonomic_preds:
         preds = taxonomic_preds[prediction]
-        for model_type in ['model', 'baseline']:
-            taxonomic_prediction_metrics[f'{model_type}_{prediction}_roc_auc'] = roc_auc_score(
-                preds['labels'], preds[f'{model_type}_predictions']
-            )
-            taxonomic_prediction_metrics[f'{model_type}_{prediction}_pr_auc'] = average_precision_score(
-                preds['labels'], preds[f'{model_type}_predictions']
-            )
-            taxonomic_prediction_metrics[f'{model_type}_{prediction}_precision_'] = precision_score(
-                preds['labels'], preds[f'{model_type}_predictions']
-            )
-            taxonomic_prediction_metrics[f'{model_type}_{prediction}_recall_'] = recall_score(
-                preds['labels'], preds[f'{model_type}_predictions']
-            )
-            precision, recall, thresholds = precision_recall_curve(
-                preds['labels'],
-                preds[f'{model_type}_predictions'],
-            )
-            taxonomic_prediction_metrics[f'{model_type}_{prediction}_pr_curve'] = [
-                precision.tolist(), recall.tolist(), thresholds.tolist()]
+        k_fold = KFold(n_splits=100, shuffle=True)
+        for indicies, _ in k_fold.split(preds):
+            split_preds = preds.iloc[indicies]
+            if split_preds['labels'].nunique() == 1:
+                continue
+            for model_type in ['model', 'baseline']:
+                taxonomic_prediction_metrics_agg[f'{model_type}_{prediction}_roc_auc'].append(roc_auc_score(
+                    split_preds['labels'], split_preds[f'{model_type}_predictions'])
+                )
+                taxonomic_prediction_metrics_agg[f'{model_type}_{prediction}_pr_auc'].append(average_precision_score(
+                    split_preds['labels'], split_preds[f'{model_type}_predictions'])
+                )
+                taxonomic_prediction_metrics_agg[f'{model_type}_{prediction}_precision_'].append(precision_score(
+                    split_preds['labels'], split_preds[f'{model_type}_predictions'])
+                )
+                taxonomic_prediction_metrics_agg[f'{model_type}_{prediction}_recall_'].append(recall_score(
+                    split_preds['labels'], split_preds[f'{model_type}_predictions'])
+                )
 
+                taxonomic_prediction_metrics_agg[f'{model_type}_{prediction}_ece'].append(expected_calibration_error(
+                    split_preds[f'{model_type}_prediction_probs'], split_preds[f'labels'])
+                )
     
+    taxonomic_prediction_metrics = {}
+    for metric, value in taxonomic_prediction_metrics_agg.items():
+        taxonomic_prediction_metrics[metric] = (np.mean(value), np.std(value))
+
     # Saving taxonomic predictions
     with open(os.path.join(save_path,"taxonomic_prediction_metrics.json"), 'w') as f:
         json.dump(taxonomic_prediction_metrics, f)
@@ -955,8 +953,8 @@ def train_and_save_all_taxonomy_pairs(
     experiment_base: str,
     train_df: pd.DataFrame,
     test_df: pd.DataFrame,
-    pile_train_df: pd.DataFrame,
-    pile_test_df: pd.DataFrame,
+    unnormalized_train_df: pd.DataFrame,
+    unnormalized_test_df: pd.DataFrame,
     baseline_model: PredictionModel,
     taxonomy_thresholds: DefaultDict,
     args: Namespace,
@@ -970,8 +968,8 @@ def train_and_save_all_taxonomy_pairs(
         experiment_base (str): The experiment base path.
         train_df (pd.DataFrame): The training dataset.
         test_df (pd.DataFrame): The test dataset.
-        pile_train_df (pd.DataFrame): Train un-normalized dataset
-        pile_test_df (pd.DataFrame): Test un-normalized dataset
+        unnormalized_train_df (pd.DataFrame): Train un-normalized dataset
+        unnormalized_test_df (pd.DataFrame): Test un-normalized dataset
         baseline_model (PredictionModel): Baseline model
         taxonomy_thresholds (DefaultDict): The taxonomy thresholds.
         start_index (int, optional): The starting index for the list of taxonomy search candidates. Defaults to None.
@@ -1010,8 +1008,8 @@ def train_and_save_all_taxonomy_pairs(
 
         LOGGER.info("Generating taxonomy categories...")
         taxonomy_func = generate_optimal_taxonomy_candidate(candidate_1_name, candidate_1_threshold, candidate_2_name, candidate_2_threshold)
-        train_df['curr_taxonomy'] = pile_train_df.apply(taxonomy_func, axis=1)
-        test_df['curr_taxonomy'] = pile_test_df.apply(taxonomy_func, axis=1)
+        train_df['curr_taxonomy'] = unnormalized_train_df.apply(taxonomy_func, axis=1)
+        test_df['curr_taxonomy'] = unnormalized_test_df.apply(taxonomy_func, axis=1)
         save_path = f"{experiment_base}/{DATA_SCHEME}/{MODEL_SIZE}/taxonomy_search/{candidate_1_name}"
         save_path += f"-{candidate_1_threshold_quantile}/{candidate_2_name}-{candidate_2_threshold_quantile}/"
         metadata = {
@@ -1063,30 +1061,37 @@ def main():
     LOGGER.info("Constructing derived features...")
     pile_dataset, memories_dataset = construct_derived_features(pile_dataset, memories_dataset)
 
-    pile_dataset = pd.concat([pile_dataset, memories_dataset], ignore_index=True)
+
     LOGGER.info("Generating taxonomy categories for each sample...")
     taxonomy_func = taxonomy_function(args.sequence_duplication_threshold)
 
-    LOGGER.info("Generating natural language and code indices...")
-    nl_indices = pile_dataset.index[pile_dataset[NATURAL_LANGUAGE_SCORE_COLUMN] >= NATURAL_LANGAUGE_SCORE_THRESHOLD]
-    code_indices = pile_dataset.index[pile_dataset[NATURAL_LANGUAGE_SCORE_COLUMN] < NATURAL_LANGAUGE_SCORE_THRESHOLD]
-
-    LOGGER.info("Pre-processing the dataset...")
-    features, labels, data_df = preprocess_dataset(pile_dataset, normalize=True)
+    pile_dataset['ds_type'] = 'representative'
+    memories_dataset['ds_type'] = 'memories'
     
-    # LOGGER.info("Calculating correlation coefficients of base + taxonomic features...")
-    # correlation_results = calculate_all_correlation_coefficients(features, labels, taxonomy_categories, nl_indices, code_indices, args)
-    # save_correlation_coefficients(experiment_base, DATA_SCHEME, MODEL_SIZE, correlation_results)
+    combined_dataset = pd.concat([pile_dataset, memories_dataset], ignore_index=True).drop_duplicates('sequence_id')
+    LOGGER.info("Pre-processing the dataset...")
+    features , labels, data_df = preprocess_dataset(combined_dataset, normalize=True)
 
     LOGGER.info("Splitting the dataset into train and test aggregate sets...")
     data_df['labels'] = labels
-    data_df['base_taxonomy'] = pile_dataset.apply(taxonomy_func, axis=1)
+    data_df['base_taxonomy'] = combined_dataset.apply(taxonomy_func, axis=1)
     data_df['stratify_labels'] = data_df['labels'].astype('str') + data_df['base_taxonomy'].astype('str')
 
-    train_data, test_data = split_dataset(data_df, data_df['stratify_labels'])
+    LOGGER.info("Calculating correlation coefficients of base + taxonomic features...")
+    correlation_results = calculate_all_correlation_coefficients(data_df, args)
+    save_correlation_coefficients(experiment_base, DATA_SCHEME, MODEL_SIZE, correlation_results)
+
+    data_df_rep = data_df[data_df['ds_type'] == 'representative']
+    data_df_mem = data_df[data_df['ds_type'] == 'memories']
+    train_data, test_data = split_dataset(data_df_rep, data_df_rep['stratify_labels'])
     train_df, test_df = train_data[0], test_data[0]
-    pile_train_df = pile_dataset.loc[train_df.index]
-    pile_test_df = pile_dataset.loc[test_df.index]
+
+    # Combine memories in train subset
+    train_df = pd.concat([train_df, data_df_mem])
+
+    unnormalized_train_df = combined_dataset.loc[train_df.index]
+    unnormalized_test_df = combined_dataset.loc[test_df.index]
+    
 
     LOGGER.info("Training baseline and taxonomic models...")
     baseline_model_results, tax_model_results = train_and_save_baseline_and_taxonomic_models(
@@ -1107,8 +1112,8 @@ def main():
         experiment_base,
         train_df,
         test_df,
-        pile_train_df,
-        pile_test_df,
+        unnormalized_train_df,
+        unnormalized_test_df,
         baseline_model_results.model,
         taxonomy_thresholds,
         args,

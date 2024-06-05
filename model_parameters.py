@@ -9,7 +9,7 @@ If we want to run parameter search on certain parameters, then consider paramete
 EXPERIMENT_ROOT = "experiments"
 MODEL_SIZE = "12b"
 DATA_SCHEME = "deduped"
-GENERATION_HF_DATASET_NAME = "usvsnsp/generation-semantic-filters"
+GENERATION_HF_DATASET_NAME = "usvsnsp/semantic-filters"
 
 """
 Feature Catalog
@@ -107,7 +107,7 @@ def taxonomy_function(sequence_duplication_threshold: int = 10) -> Callable[[pd.
 """
 Model Training Hyper-parameters
 """
-GLOBAL_SEED = 80
+GLOBAL_SEED = 1024
 
 TRAIN_SIZE = 0.8
 VALIDATION_SIZE = 0.1

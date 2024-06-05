@@ -7,11 +7,7 @@ from pyspark.sql import types as T
 
 from .base import PIPELINE_SINGLETON
 
-import re
-
-import re
-
-def find_if_incrementing_or_repeating(splits):
+def find_if_incrementing_or_repeating(splits, test_repeating=False):
     """Finds if the given list of words is incrementing
     
     A sequence is incrementing if it there are a set of integers or decimals in arithmetic progression 
@@ -25,16 +21,16 @@ def find_if_incrementing_or_repeating(splits):
             the sequence is incrementing and the calculated difference.
     """
     # We need atleast 3 integers to define an AP
-    if len(splits) < 3:
+    if len(splits) < 3 and not test_repeating:
         return False, 0
-    elif len(splits) == 3:
+    elif len(splits) == 3 and not test_repeating:
         # Every element has to be a number
         if not all([type(i) in [float, int] for i in splits]): return False, 0
         return (splits[2] - 2*splits[1] + splits[0]) < 1e-5, splits[2] - splits[1]
     
     # First and last words of a sequence can be partial
     # We ignore them if length of splits is more than 4
-    if len(splits) > 4:
+    if len(splits) > 4 and not test_repeating:
         splits = splits[1:-1]
         
         
@@ -79,7 +75,14 @@ def find_if_incrementing_or_repeating(splits):
     
     return False, 0
 
-def split_text(text, handle_decimals = True):
+def split_text(text, split_type = "incrementing"):
+
+    if split_type == "repeating":
+        return list(text)
+
+    elif split_type != "incrementing":
+        raise ValueError("Invalid Split Type")
+
     # Check if we have hexadecimal numerals
     text = re.sub(r"\s+", " ", text)
     splits = []
@@ -122,32 +125,19 @@ def split_text(text, handle_decimals = True):
         try:
             splits_new.append(int(word))
         except ValueError:
-            # Handle decimals
-            if word == '.' and idx > 0 and (idx+1) < len(splits) and handle_decimals:
-                if splits[idx-1].isdigit() and splits[idx+1].isdigit():
-                    try:
-                        splits_new[-1] = float(splits[idx-1] + splits[idx] + splits[idx+1])
-                        to_continue = True
-                    except ValueError:
-                        splits_new.append(word)
-            else:
-                splits_new.append(word)
+            splits_new.append(word)
     
     return splits_new
         
 def is_pattern(text):
-    splits = split_text(text, handle_decimals = True)
+    splits = split_text(text)
     is_inc, diff = find_if_incrementing_or_repeating(splits)
     if is_inc and diff is not None and diff != 0:
         return True, False
-    elif is_inc:
-        return False, True
     
-    splits = split_text(text, handle_decimals = False) 
+    splits = split_text(text, split_type="repeating") 
     is_inc, diff = find_if_incrementing_or_repeating(splits)
-    if is_inc and diff is not None and diff != 0:
-        return True, False
-    elif is_inc:
+    if is_inc: # we don't have incrementing cases when we split by characters
         return False, True
     else:
         return False, False
@@ -193,4 +183,4 @@ if __name__ == "__main__":
     samp = r"""
     "A.1 , A.2 , A.3 , A.4, B.1 , B.2, B.3, C.1"
     """
-    print(incrementing_sequences_filter_wrapper(samp))
+    print(is_pattern(samp))
