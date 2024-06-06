@@ -16,13 +16,13 @@ def initialize_spark() -> SparkSession:
 
     config = (
         SparkConf()
-        .setMaster("local[*]")
+        .setMaster(f"local[{NUM_CPU_COUNT}]")
         .setAppName("semantic-memorization")
-        .set("spark.driver.cores", f"12")
+        # .set("spark.driver.cores", f"12")
         .set("spark.driver.memory", f"{DRIVER_MEMORY_SIZE}")
         .set("spark.driver.memoryOverhead", f"{HEAP_SIZE}")
         .set("spark.ui.port", "5050")
-        .set("spark.executor.cores", f"{NUM_CPU_COUNT - 16}")
+        # .set("spark.executor.cores", f"{NUM_CPU_COUNT - 16}")
         .set("spark.sql.shuffle.partitions", f"{NUM_SPARK_PARTITIONS}")
         .set("spark.sql.execution.arrow.pyspark.enabled", "true")
         .set("spark.sql.execution.arrow.pyspark.fallback.enabled", "true")
