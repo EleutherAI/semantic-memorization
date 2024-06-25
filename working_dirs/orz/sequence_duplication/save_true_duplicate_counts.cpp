@@ -8,13 +8,17 @@ using namespace std;
 const string DS_TYPE = "standard";
 const string PILE_BIN_LOCATION = "/scratch/pile/";
 /**
-* Relative location of dataset. The script assumes true location to be
+* Relative location of dataset. The script assumes true location to be at
 * {PILE_BIN_LOCATION}/{DS_TYPE}/document.bin
+* Your dataset should be one of (https://huggingface.co/datasets/EleutherAI/pile-standard-pythia-preshuffled) or (https://huggingface.co/datasets/EleutherAI/pile-deduped-pythia-preshuffled/tree/main)
+* Make sure Combine the bin files into a single one, following this repo: https://github.com/EleutherAI/pythia/tree/main?tab=readme-ov-file#exploring-the-dataset
 */
 
 const string DATA_DIR = "../results/";
+// Location of results directory. The script will save the results in the following location
 const int NGRAMS = 32;
 const int OFFSET_START_IDX = 32;
+// We only calculate number of duplicates of continuation, S[32:64]
 
 void print_progress(string prefix, float progress){
     cout << "\33[2k\r" << prefix << " " << setprecision(4) << progress;

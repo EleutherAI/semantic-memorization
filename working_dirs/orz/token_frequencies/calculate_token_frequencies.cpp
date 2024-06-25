@@ -1,3 +1,7 @@
+/**
+* Although we store counts of tokens saperately for memorized and non-memorized tokens, we can combine them to get the total counts of each token
+*/
+
 #include<bits/stdc++.h>
 using namespace std;
 
@@ -74,7 +78,10 @@ int run_pile(vector<int>& indicies){
 }
 
 
-// Loads the indicies of the memorized tokens
+// Loads the indicies of the memorized tokens, these were stored on a text file, you can replicate them by storing the indicies of the memorized tokens (with memorization score of 1)
+// You can find list of memorized indicies at https://huggingface.co/datasets/EleutherAI/pythia-memorized-evals
+// Note that we are only using duped.12b and deduped.12b splits
+// on a text file (mem_standard.txt) and then loading them here
 int load_indicies(vector<int>& data){
     fstream ios;
     ios.open("/fsx/orz/memorization-evals/memorized_evals/mem_standard.txt");

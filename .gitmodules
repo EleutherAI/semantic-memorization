@@ -1,0 +1,3 @@
+[submodule "working_dirs/orz/sequence_duplication/cnpy"]
+	path = working_dirs/orz/sequence_duplication/cnpy
+	url = https://github.com/rogersce/cnpy
