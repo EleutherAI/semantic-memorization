@@ -16,7 +16,7 @@ Feature Catalog
 """
 NATURAL_LANGUAGE_SCORE_COLUMN = "nl_scores"
 # https://eleutherai.notion.site/Evaluate-NL-Code-Classifier-on-Memorized-Samples-7742b4b768d54131afc07b06f0610148
-NATURAL_LANGAUGE_SCORE_THRESHOLD = 0.457414
+NATURAL_LANGUAGE_SCORE_THRESHOLDS = [0.525, 0.4]
 CONTINUOUS_FEATURE_COLUMNS = [
     "sequence_duplicates",
     "max_frequency",

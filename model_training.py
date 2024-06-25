@@ -40,7 +40,7 @@ from model_parameters import (
     MAX_MODEL_ITERATIONS,
     MODEL_SIZE,
     GENERATION_HF_DATASET_NAME,
-    NATURAL_LANGAUGE_SCORE_THRESHOLD,
+    NATURAL_LANGUAGE_SCORE_THRESHOLDS,
     NATURAL_LANGUAGE_SCORE_COLUMN,
     REG_NAME,
     REG_STRENGTH,
@@ -360,13 +360,13 @@ def calculate_all_correlation_coefficients(
     coefficients["baseline"]["all"]["spearman"] = baseline_spearman
     coefficients["baseline"]["all"]["xi"] = baseline_xi
 
-    nl_ds = dataset[dataset[NATURAL_LANGUAGE_SCORE_COLUMN] >= NATURAL_LANGAUGE_SCORE_THRESHOLD]
+    nl_ds = dataset[dataset[NATURAL_LANGUAGE_SCORE_COLUMN] >= NATURAL_LANGUAGE_SCORE_THRESHOLDS[0]]
     nl_pearson, nl_spearman, nl_xi = calculate_correlation_coefficients(nl_ds[feature_cols], nl_ds["labels"])
     coefficients["baseline"]["natural_language"]["pearson"] = nl_pearson
     coefficients["baseline"]["natural_language"]["spearman"] = nl_spearman
     coefficients["baseline"]["natural_language"]["xi"] = nl_xi
 
-    code_ds = dataset[dataset[NATURAL_LANGUAGE_SCORE_COLUMN] < NATURAL_LANGAUGE_SCORE_THRESHOLD]
+    code_ds = dataset[dataset[NATURAL_LANGUAGE_SCORE_COLUMN] <= NATURAL_LANGUAGE_SCORE_THRESHOLDS[-1]]
     code_pearson, code_spearman, code_xi = calculate_correlation_coefficients(code_ds[feature_cols], code_ds["labels"])
     coefficients["baseline"]["code"]["pearson"] = code_pearson
     coefficients["baseline"]["code"]["spearman"] = code_spearman
@@ -380,13 +380,13 @@ def calculate_all_correlation_coefficients(
         coefficients[taxonomy]["all"]["spearman"] = taxonomic_spearman
         coefficients[taxonomy]["all"]["xi"] = taxonomic_xi
 
-        tax_nl_ds = tax_all_ds[tax_all_ds[NATURAL_LANGUAGE_SCORE_COLUMN] >= NATURAL_LANGAUGE_SCORE_THRESHOLD]
+        tax_nl_ds = tax_all_ds[tax_all_ds[NATURAL_LANGUAGE_SCORE_COLUMN] >= NATURAL_LANGUAGE_SCORE_THRESHOLDS[0]]
         tax_nl_pearson, tax_nl_spearman, tax_nl_xi = calculate_correlation_coefficients(tax_nl_ds[feature_cols], tax_nl_ds["labels"])
         coefficients[taxonomy]["natural_language"]["pearson"] = tax_nl_pearson
         coefficients[taxonomy]["natural_language"]["spearman"] = tax_nl_spearman
         coefficients[taxonomy]["natural_language"]["xi"] = tax_nl_xi
 
-        tax_code_ds = tax_all_ds[dataset[NATURAL_LANGUAGE_SCORE_COLUMN] < NATURAL_LANGAUGE_SCORE_THRESHOLD]
+        tax_code_ds = tax_all_ds[dataset[NATURAL_LANGUAGE_SCORE_COLUMN] <= NATURAL_LANGUAGE_SCORE_THRESHOLDS[-1]]
         tax_code_pearson, tax_code_spearman, tax_code_xi = calculate_correlation_coefficients(tax_code_ds[feature_cols], tax_code_ds["labels"])
         coefficients[taxonomy]["code"]["pearson"] = tax_code_pearson
         coefficients[taxonomy]["code"]["spearman"] = tax_code_spearman
