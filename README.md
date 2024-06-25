@@ -52,8 +52,6 @@ To replicate results of duplication, run the following scripts in a sequence
 - [script calculating exact duplicates](.working_dirs/orz/sequence_duplication/save_true_duplicate_counts.cpp) This script compares each sequence with all sequences with same hash to get exact count of duplicates. 
 - Following this, you get a list of true counts, you can combine them use [this script](.working_dirs/orz/sequence_duplication/save_true_duplicates.py)
 - You can find already processed list of sequence ids with their count of duplicates in [standard](https://huggingface.co/datasets/usvsnsp/duped-num-duplicates) and [deduped](https://huggingface.co/datasets/usvsnsp/deduped-num-duplicates) datasets.
-### Templating (Incrementing and Repeating Filters)
-
 ### Semantic and Textual Matches Filter
 To replicate semantics and textual matches filter, run the following scripts in a sequence:
 - Create sentence embeddings for various datasets, with [this script](./working_dirs/rintarou/sentence_embedding_maker.py)
@@ -65,6 +63,8 @@ To replicate results of token frequences, run [this script](.working_dirs/orz/to
 
 ## Combining Filters
 To combine all the existing filters, run [combine metrics script](calculate_metrics.py). You will need to setup an appropriate JDK and install all requirements to run the script. Filter results can be found on [this huggingface dataset](https://huggingface.co/datasets/usvsnsp/semantic-filters)
+
+Note: Filters for templating (incrementing and repeating) as well has huffman coding length are calculated while the [filters](./filters) are combined.
 ## Training Taxonomic Model
 To train taxonomic model and launch greedy taxonomic search, launch [this script](model_training.py)
 ## Plots
