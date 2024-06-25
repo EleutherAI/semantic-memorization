@@ -55,6 +55,11 @@ To replicate results of duplication, run the following scripts in a sequence
 ### Templating (Incrementing and Repeating Filters)
 
 ### Semantic and Textual Matches Filter
+To replicate semantics and textual matches filter, run the following scripts in a sequence:
+- Create sentence embeddings for various datasets, with [this script](./working_dirs/rintarou/sentence_embedding_maker.py)
+- Compute semantic filter counts with [this script](./working_dirs/rintarou/snowclones_maker.py)
+- Compute textual matche counts with [this script](./working_dirs/rintarou/templating.py). for texual macthes, we also need to create only query sentences for each partition as we compare levestein distance between queries for this filter. This can be acheived by [this script](working_dirs/rintarou/query_maker.py). 
+  
 ### Token frequencies
 To replicate results of token frequences, run [this script](.working_dirs/orz/token_frequencies/calculate_token_frequencies.cpp). Full list of token frequencies can be found on huggingface for [standard](https://huggingface.co/datasets/usvsnsp/duped-num-frequencies) and [deduped](https://huggingface.co/datasets/usvsnsp/deduped-num-frequencies) datasets.
 
