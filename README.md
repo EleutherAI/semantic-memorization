@@ -1,39 +1,74 @@
-# Semantic Memorization 
+# Semantic Memorization
 
-Additional information and workstream can be found in the ([Notion project](https://eleutherai.notion.site/Semantic-Memorization-eeba3b27f82e43f4b636d742f2914d4f)).
+This repository is for EleutherAI's project Semantic Memorization which defines a unique taxonomy for memorized sequences based on factors that influence memorization. For detailed information on how likelihood of a sequence being memorized is dependant on taxonomy, please see our paper [Recite, Reconstruct, Recollect: Memorization in LMs as a Multifaceted Phenomenon](https://arxiv_link_here)
+
+## Contents
+- [Semantic Memorization](#semantic-memorization)
+    * [Motivation](#motivation)
+    * [Taxonomy](#taxonomy)
+- [Reproducing Results](#reproducing-results)
+    * [Filters](#filters)
+    * [Combining Filters](#combining-filters)
+    * [Training Taxonomic Model](#training-taxonomic-model)
+    * [Plots](#plots)
+- [Citation Details](#citation-details)
+
 
 ## Motivation
+Memorization in language models is typically treated as a homogenous phenomenon, neglecting the specifics of the memorized data. We instead model memorization as the effect of a set of complex factors that describe each sample and relate it to the model and corpus. To build intuition around these factors, we break memorization down into a taxonomy: recitation of highly duplicated sequences, reconstruction of inherently predictable sequences, and recollection of sequences that are neither. We demonstrate the usefulness of our taxonomy by using it to construct a predictive model for memorization. By analyzing dependencies and inspecting the weights of the predictive model, we find that different factors influence the likelihood of memorization differently depending on the taxonomic category.
+## Taxonomy
+![](./readme-images/memorization_taxonomy.png)
+Our taxonomy, illustrated above, defines three
+types of LM memorization based on colloquial de-
+scriptions of human memorization. Humans recite
+direct quotes that they commit to memory through
+repeated exposure, so LMs recite highly duplicated
+sequences. Humans reconstruct a passage by re-
+membering a general pattern and filling in the gaps,
+so LMs reconstruct inherently predictable boiler-
+plate templates. Humans sporadically recollect an
+episodic memory or fragment after a single expo-
+sure, so LMs recollect other sequences seen rarely
+during training.
 
-`Memorization` refers to language models' tendency to sometimes output entire training sequences verbatim. This phenomenon is not deeply understood but has implications for safely deploying language models. In particular, it is vital to minimize a model’s memorization of sensitive datapoints such as those containing personally identifiable information (PII) and trade secrets.
+# Reproducing Results
+## Filters
+### Code vs Natural Language
+To train a [natural language vs code classifier](https://huggingface.co/usvsnsp/code-vs-nl), we used [huggingface's training pipeline](https://huggingface.co/docs/transformers/en/main_classes/trainer) on randomly sampled, equal weight subsets of [bookcorpus](https://huggingface.co/datasets/bookcorpus/bookcorpus) and [github-code](https://huggingface.co/datasets/codeparrot/github-code). following hparams were used while training
+- learning_rate: 1e-07
+- train_batch_size: 256
+- eval_batch_size: 1024
+- seed: 42
+- optimizer: Adam with betas=(0.9,0.999) and epsilon=1e-08
+- lr_scheduler_type: linear
+- training_steps: 1000
 
-This project aims to challenge this traditional definition of memorization. We believe that it captures the spirit of the problem but that it is too broad. For example, the `k-elicitable` definition ( Carlini et al., 2022) treats highly repetitive text, code, and sequences with only a single true continuation as memorized and thus undesirable. We conjecture that traditional memorization definitions incorrectly capture too many of these benign memorizations and don't accurately reflect undesirable memorization.
+Following this, we used [this script](./working_dirs/orz/classify_code_vs_nl.py) to find probabilities of a sequence being memorized.
+### Highly Duplicated Filter
+To replicate results of duplication, run the following scripts in a sequence
+- [script saving sequence hashes](.working_dirs/orz/sequence_duplication/save_sequence_hashes.py), to save hash of every 32-gram sequence of Pile
+- [script saving zero offset hashes](.working_dirs/orz/sequence_duplication/save_zero_offset_duplicate_hashes.py) Script saving hashes of only required offset (32 in our case)
+- [script saving approximate duplicates, based on hashes](.working_dirs/orz/sequence_duplication/calculate_asymptotic_duplicates.py). We now have a single numpy file that stores hashes and sequence ids of all sequences whose hashes are the same as atleast one of zero offset sequence's hashes
+- [script calculating exact duplicates](.working_dirs/orz/sequence_duplication/save_true_duplicate_counts.cpp) This script compares each sequence with all sequences with same hash to get exact count of duplicates. 
+- Following this, you get a list of true counts, you can combine them use [this script](.working_dirs/orz/sequence_duplication/save_true_duplicates.py)
+- You can find already processed list of sequence ids with their count of duplicates in [standard](https://huggingface.co/datasets/usvsnsp/duped-num-duplicates) and [deduped](https://huggingface.co/datasets/usvsnsp/deduped-num-duplicates) datasets.
+### Semantic and Textual Matches Filter
+To replicate semantics and textual matches filter, run the following scripts in a sequence:
+- Create sentence embeddings for various datasets, with [this script](./working_dirs/rintarou/sentence_embedding_maker.py)
+- Compute semantic filter counts with [this script](./working_dirs/rintarou/snowclones_maker.py)
+- Compute textual matche counts with [this script](./working_dirs/rintarou/templating.py). for texual macthes, we also need to create only query sentences for each partition as we compare levestein distance between queries for this filter. This can be acheived by [this script](working_dirs/rintarou/query_maker.py). 
+  
+### Token frequencies
+To replicate results of token frequences, run [this script](.working_dirs/orz/token_frequencies/calculate_token_frequencies.cpp). Full list of token frequencies can be found on huggingface for [standard](https://huggingface.co/datasets/usvsnsp/duped-num-frequencies) and [deduped](https://huggingface.co/datasets/usvsnsp/deduped-num-frequencies) datasets.
 
-![image](https://user-images.githubusercontent.com/17308542/225178468-e3014b13-513e-4d0d-a72b-26f900ec9932.png)
+## Combining Filters
+To combine all the existing filters, run [combine metrics script](calculate_metrics.py). You will need to setup an appropriate JDK and install all requirements to run the script. Filter results can be found on [this huggingface dataset](https://huggingface.co/datasets/usvsnsp/semantic-filters)
 
-Archetypal examples of sequences from The Pile “memorized” by GPT-2, even though GPT-2 was not trained on The Pile. This implies that either there is training set overlap, or that there are sequences that most competent language models could predict without needing to see the sequence during training. Carlini et al., 2022)
-
-## Potential Research/Paper Contributions
-
-- We want to develop a robust taxonomy of types of memorization as well as the ability to analyze memorization across these categories. This may involve developing some metric for how likely a sequence is to be memorized, mapping a model's activations to memorization type, or another approach.
-- A definition of memorization that better captures `adverse/harmful memorizations` while minimizing the inclusion of `spurious/benign memorizations` is an essential step in measuring this problem and taking action toward mitigating it.
-- Can we assign a probability to whether a particular sequence will be memorized or not? This coupled with a taxonomy may help us begin to understand why LLMs memorize some data and not others.
-- Can we develop a classifier than can filter out benign memorizations? This will allow us to measure harmful memorizations more closely.
-
-## Datasets
-
-We’re currently analyzing the data memorized by the Pythia models as a part of the [Emergent and Predictable Memorization in Large Language Models](https://cdn.discordapp.com/attachments/1029044901645652111/1084179731991244880/Interpretability-31.pdf) EleutherAI paper. Reading that paper this give a better understanding of where the data came from and what it means. The datasets can be found on Hugging Face. [EleutherAI/pythia-memorized-evals · Datasets at Hugging Face](https://huggingface.co/datasets/EleutherAI/pythia-memorized-evals)
-
-![image](https://user-images.githubusercontent.com/17308542/225178619-98c2f26e-98f0-40b2-9034-1abf083e6329.png)
-
-## Background
-
-Having a basic grasp of the existing literature and problem area will be helpful for contributing to this project. You don’t need a super deep understand and there are opportunities for contributing across different levels of experience. **Please add any more papers/articles that you think are relevant as well as leave comments on existing articles.**
-
-## Development Setup
-1. Setup your Python (3.11.4) environment via [Conda](https://docs.conda.io/projects/miniconda/en/latest/)
-2. Run `apt-get install -y openjdk-11-jdk` to install JDK for PySpark if you're on Ubuntu, otherwise feel free to use the appropriate package manager
-3. Install Python packages via `pip install -r requirements.txt`
-
-## Running metric pipeline
-1. Run `python calculate_metrics.py`
-2. To monitor the status of Spark jobs, go to `http://localhost:4040/jobs/`; Don't forget to port-forward `4040` if necessary
+Note: Filters for templating (incrementing and repeating) as well has huffman coding length are calculated while the [filters](./filters) are combined.
+## Training Taxonomic Model
+To train taxonomic model and launch greedy taxonomic search, launch [this script](model_training.py)
+## Plots
+- To replicate results on taxonomic model performance, and plots on model weights refer to [this notebook](./plotting/model_perf_testing.ipynb).  
+- For results on correlation coefficients, refer to [this notebook](./plotting/Correlation_Coefficients.ipynb)
+- For plot on optimal thresholds for code-classifier, refer to [this notebook](.working_dirs/alvin/code_classifier_evaluation/memorization_eval_analysis.ipynb)
+## Citation Details
