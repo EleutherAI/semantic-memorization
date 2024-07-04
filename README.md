@@ -72,3 +72,11 @@ To train taxonomic model and launch greedy taxonomic search, launch [this script
 - For results on correlation coefficients, refer to [this notebook](./plotting/Correlation_Coefficients.ipynb)
 - For plot on optimal thresholds for code-classifier, refer to [this notebook](.working_dirs/alvin/code_classifier_evaluation/memorization_eval_analysis.ipynb)
 ## Citation Details
+```
+@article{prashanth2024recite,
+  title={Recite, Reconstruct, Recollect: Memorization in LMs as a Multifaceted Phenomenon},
+  author={Prashanth, USVSN Sai and Deng, Alvin and O'Brien, Kyle and SV, Jyothir and Khan, Mohammad Aflah and Borkar, Jaydeep and Choquette-Choo, Christopher A and Fuehne, Jacob Ray and Biderman, Stella and Ke, Tracy and Lee, Katherine and Saphra, Naomi},
+  journal={arXiv preprint arXiv:2406.17746},
+  year={2024}
+}
+```
