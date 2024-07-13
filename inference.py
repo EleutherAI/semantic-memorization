@@ -66,6 +66,13 @@ def load_model(split_name, checkpoint, cache_dir = None, device = "cuda:0"):
     model = model.half().to(device)
     return model
 
+def calculate_perplexity_from_probability(token_probs: torch.Tensor) -> torch.float64:
+    """
+    Helper function for `calculate_perplexity`
+    """
+    log_likelihood = torch.log(torch.stack(token_probs)).sum()
+    cross_entropy = -log_likelihood / len(token_probs)
+    return torch.exp(cross_entropy).item()
 
 def calculate_perplexity(logits: torch.Tensor, labels: torch.Tensor) -> torch.float64:
     """
@@ -105,20 +112,10 @@ def calculate_perplexity(logits: torch.Tensor, labels: torch.Tensor) -> torch.fl
             token_probs.append(label_prob.detach())
 
         mid_index = len(token_probs) // 2
-        prompt_ppl = None
-        log_likelihood = torch.log(torch.stack(token_probs[:mid_index])).sum()
-        cross_entropy = -log_likelihood / len(token_probs)
-        prompt_ppl = torch.exp(cross_entropy).item()
 
-        generation_ppl = None
-        log_likelihood = torch.log(torch.stack(token_probs[mid_index:])).sum()
-        cross_entropy = -log_likelihood / len(token_probs)
-        generation_ppl = torch.exp(cross_entropy).item()
-
-        sequence_ppl = None
-        log_likelihood = torch.log(torch.stack(token_probs)).sum()
-        cross_entropy = -log_likelihood / len(token_probs)
-        sequence_ppl = torch.exp(cross_entropy).item()
+        prompt_ppl = calculate_perplexity_from_probability(token_probs[:mid_index])
+        generation_ppl = calculate_perplexity_from_probability(token_probs[mid_index:])
+        sequence_ppl = calculate_perplexity_from_probability(token_probs)
 
         return prompt_ppl, generation_ppl, sequence_ppl
     except Exception as e:
