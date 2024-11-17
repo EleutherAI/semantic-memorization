@@ -1,0 +1,203 @@
+Downloading readme:   0%|                           | 0.00/5.84k [00:00<?, ?B/s]Downloading readme: 100%|██████████████████| 5.84k/5.84k [00:00<00:00, 31.0MB/s]
+Downloading data:   0%|                             | 0.00/1.91G [00:00<?, ?B/s]Downloading data:   0%|                    | 4.19M/1.91G [00:00<02:08, 14.9MB/s]Downloading data:   1%|▏                   | 12.6M/1.91G [00:00<00:51, 36.6MB/s]Downloading data:   2%|▎                   | 29.4M/1.91G [00:00<00:31, 59.8MB/s]Downloading data:   2%|▍                   | 46.1M/1.91G [00:00<00:26, 70.4MB/s]Downloading data:   3%|▌                   | 54.5M/1.91G [00:00<00:25, 71.9MB/s]Downloading data:   3%|▋                   | 62.9M/1.91G [00:01<00:25, 73.6MB/s]Downloading data:   4%|▋                   | 71.3M/1.91G [00:01<00:24, 74.6MB/s]Downloading data:   4%|▊                   | 79.7M/1.91G [00:01<00:24, 75.5MB/s]Downloading data:   5%|▉                   | 88.1M/1.91G [00:01<00:23, 76.5MB/s]Downloading data:   5%|█▏                   | 105M/1.91G [00:01<00:22, 81.7MB/s]Downloading data:   6%|█▏                   | 113M/1.91G [00:01<00:22, 79.2MB/s]Downloading data:   7%|█▍                   | 130M/1.91G [00:01<00:21, 82.5MB/s]Downloading data:   7%|█▌                   | 138M/1.91G [00:01<00:21, 80.7MB/s]Downloading data:   8%|█▌                   | 147M/1.91G [00:02<00:22, 79.4MB/s]Downloading data:   8%|█▋                   | 155M/1.91G [00:02<00:22, 78.8MB/s]Downloading data:   9%|█▊                   | 164M/1.91G [00:02<00:22, 78.9MB/s]Downloading data:   9%|█▉                   | 180M/1.91G [00:02<00:21, 79.8MB/s]Downloading data:  10%|██▏                  | 197M/1.91G [00:02<00:21, 80.9MB/s]Downloading data:  11%|██▎                  | 214M/1.91G [00:02<00:19, 85.4MB/s]Downloading data:  12%|██▍                  | 226M/1.91G [00:02<00:18, 91.7MB/s]Downloading data:  13%|██▋                  | 239M/1.91G [00:03<00:20, 80.9MB/s]Downloading data:  13%|██▊                  | 256M/1.91G [00:03<00:19, 85.7MB/s]Downloading data:  14%|██▉                  | 273M/1.91G [00:03<00:18, 89.6MB/s]Downloading data:  15%|███▏                 | 289M/1.91G [00:03<00:18, 88.3MB/s]Downloading data:  16%|███▎                 | 302M/1.91G [00:03<00:17, 94.5MB/s]Downloading data:  16%|███▍                 | 315M/1.91G [00:03<00:18, 87.4MB/s]Downloading data:  17%|███▌                 | 327M/1.91G [00:04<00:16, 94.0MB/s]Downloading data:  18%|███▋                 | 340M/1.91G [00:04<00:20, 78.3MB/s]Downloading data:  19%|███▉                 | 357M/1.91G [00:04<00:19, 80.7MB/s]Downloading data:  19%|████                 | 369M/1.91G [00:04<00:20, 76.5MB/s]Downloading data:  20%|████▏                | 377M/1.91G [00:04<00:20, 76.1MB/s]Downloading data:  20%|████▎                | 390M/1.91G [00:04<00:20, 74.2MB/s]Downloading data:  21%|████▍                | 398M/1.91G [00:05<00:21, 69.8MB/s]Downloading data:  21%|████▍                | 407M/1.91G [00:05<00:21, 71.5MB/s]Downloading data:  22%|████▋                | 424M/1.91G [00:05<00:18, 78.8MB/s]Downloading data:  23%|████▊                | 440M/1.91G [00:05<00:17, 84.3MB/s]Downloading data:  23%|████▉                | 449M/1.91G [00:05<00:21, 68.3MB/s]Downloading data:  24%|█████                | 466M/1.91G [00:05<00:19, 75.5MB/s]Downloading data:  25%|█████▏               | 474M/1.91G [00:06<00:18, 76.6MB/s]Downloading data:  26%|█████▍               | 491M/1.91G [00:06<00:18, 75.7MB/s]Downloading data:  26%|█████▍               | 499M/1.91G [00:06<00:19, 73.0MB/s]Downloading data:  27%|█████▌               | 508M/1.91G [00:06<00:18, 75.2MB/s]Downloading data:  27%|█████▋               | 516M/1.91G [00:06<00:18, 77.1MB/s]Downloading data:  28%|█████▊               | 533M/1.91G [00:06<00:16, 82.0MB/s]Downloading data:  28%|█████▉               | 541M/1.91G [00:06<00:16, 81.2MB/s]Downloading data:  29%|██████               | 549M/1.91G [00:07<00:16, 80.8MB/s]Downloading data:  29%|██████▏              | 558M/1.91G [00:07<00:16, 80.3MB/s]Downloading data:  30%|██████▎              | 575M/1.91G [00:07<00:16, 81.5MB/s]Downloading data:  30%|██████▍              | 583M/1.91G [00:07<00:16, 80.5MB/s]Downloading data:  31%|██████▌              | 600M/1.91G [00:07<00:15, 84.3MB/s]Downloading data:  32%|██████▊              | 617M/1.91G [00:07<00:14, 88.0MB/s]Downloading data:  33%|██████▉              | 629M/1.91G [00:07<00:13, 94.8MB/s]Downloading data:  34%|███████              | 642M/1.91G [00:08<00:21, 59.1MB/s]Downloading data:  34%|███████▏             | 659M/1.91G [00:08<00:18, 66.0MB/s]Downloading data:  35%|███████▎             | 667M/1.91G [00:08<00:18, 67.7MB/s]Downloading data:  35%|███████▍             | 675M/1.91G [00:08<00:17, 70.3MB/s]Downloading data:  36%|███████▌             | 684M/1.91G [00:08<00:17, 72.2MB/s]Downloading data:  36%|███████▌             | 692M/1.91G [00:08<00:16, 74.1MB/s]Downloading data:  37%|███████▋             | 700M/1.91G [00:09<00:16, 74.8MB/s]Downloading data:  38%|███████▉             | 717M/1.91G [00:09<00:14, 79.7MB/s]Downloading data:  38%|████████             | 734M/1.91G [00:09<00:13, 86.0MB/s]Downloading data:  39%|████████▏            | 747M/1.91G [00:09<00:12, 91.7MB/s]Downloading data:  40%|████████▎            | 759M/1.91G [00:09<00:14, 80.6MB/s]Downloading data:  41%|████████▌            | 776M/1.91G [00:09<00:13, 84.5MB/s]Downloading data:  41%|████████▋            | 793M/1.91G [00:10<00:13, 85.2MB/s]Downloading data:  42%|████████▊            | 805M/1.91G [00:10<00:12, 91.5MB/s]Downloading data:  43%|████████▉            | 818M/1.91G [00:10<00:13, 83.7MB/s]Downloading data:  43%|█████████            | 830M/1.91G [00:10<00:11, 91.4MB/s]Downloading data:  44%|█████████▎           | 843M/1.91G [00:10<00:12, 85.3MB/s]Downloading data:  45%|█████████▍           | 856M/1.91G [00:10<00:12, 87.8MB/s]Downloading data:  45%|█████████▌           | 868M/1.91G [00:11<00:13, 79.6MB/s]Downloading data:  46%|█████████▋           | 885M/1.91G [00:11<00:12, 81.3MB/s]Downloading data:  47%|█████████▉           | 902M/1.91G [00:11<00:11, 85.5MB/s]Downloading data:  48%|██████████           | 914M/1.91G [00:11<00:12, 80.7MB/s]Downloading data:  48%|██████████▏          | 923M/1.91G [00:11<00:12, 78.9MB/s]Downloading data:  49%|██████████▏          | 931M/1.91G [00:11<00:12, 78.1MB/s]Downloading data:  49%|██████████▎          | 944M/1.91G [00:11<00:12, 76.6MB/s]Downloading data:  50%|██████████▌          | 960M/1.91G [00:12<00:12, 78.4MB/s]Downloading data:  51%|██████████▋          | 977M/1.91G [00:12<00:11, 83.6MB/s]Downloading data:  52%|██████████▉          | 994M/1.91G [00:12<00:11, 80.0MB/s]Downloading data:  52%|██████████▍         | 1.00G/1.91G [00:12<00:11, 79.2MB/s]Downloading data:  53%|██████████▌         | 1.01G/1.91G [00:12<00:11, 77.8MB/s]Downloading data:  54%|██████████▋         | 1.03G/1.91G [00:13<00:11, 80.1MB/s]Downloading data:  55%|██████████▉         | 1.04G/1.91G [00:13<00:10, 85.2MB/s]Downloading data:  55%|███████████         | 1.06G/1.91G [00:13<00:10, 84.0MB/s]Downloading data:  56%|███████████▎        | 1.08G/1.91G [00:13<00:09, 83.9MB/s]Downloading data:  57%|███████████▍        | 1.09G/1.91G [00:13<00:09, 83.8MB/s]Downloading data:  58%|███████████▌        | 1.11G/1.91G [00:14<00:09, 81.6MB/s]Downloading data:  59%|███████████▊        | 1.13G/1.91G [00:14<00:09, 83.0MB/s]Downloading data:  59%|███████████▉        | 1.14G/1.91G [00:14<00:09, 82.1MB/s]Downloading data:  60%|████████████        | 1.15G/1.91G [00:14<00:09, 84.3MB/s]Downloading data:  61%|████████████▏       | 1.16G/1.91G [00:14<00:08, 83.7MB/s]Downloading data:  61%|████████████▎       | 1.17G/1.91G [00:14<00:07, 92.6MB/s]Downloading data:  62%|████████████▍       | 1.19G/1.91G [00:15<00:12, 59.9MB/s]Downloading data:  63%|████████████▌       | 1.20G/1.91G [00:15<00:10, 69.0MB/s]Downloading data:  64%|████████████▊       | 1.22G/1.91G [00:15<00:09, 74.4MB/s]Downloading data:  65%|████████████▉       | 1.24G/1.91G [00:15<00:08, 78.0MB/s]Downloading data:  65%|█████████████       | 1.25G/1.91G [00:15<00:07, 86.2MB/s]Downloading data:  66%|█████████████▏      | 1.26G/1.91G [00:15<00:08, 80.0MB/s]Downloading data:  67%|█████████████▎      | 1.28G/1.91G [00:16<00:07, 85.7MB/s]Downloading data:  67%|█████████████▍      | 1.29G/1.91G [00:16<00:08, 74.4MB/s]Downloading data:  68%|█████████████▋      | 1.30G/1.91G [00:16<00:07, 79.3MB/s]Downloading data:  69%|█████████████▊      | 1.32G/1.91G [00:16<00:06, 86.1MB/s]Downloading data:  70%|█████████████▉      | 1.33G/1.91G [00:16<00:07, 79.8MB/s]Downloading data:  70%|██████████████      | 1.35G/1.91G [00:16<00:06, 85.2MB/s]Downloading data:  71%|██████████████▏     | 1.36G/1.91G [00:17<00:06, 91.5MB/s]Downloading data:  72%|██████████████▎     | 1.37G/1.91G [00:17<00:06, 83.9MB/s]Downloading data:  72%|██████████████▍     | 1.38G/1.91G [00:17<00:05, 91.8MB/s]Downloading data:  73%|██████████████▌     | 1.40G/1.91G [00:17<00:06, 83.8MB/s]Downloading data:  74%|██████████████▊     | 1.41G/1.91G [00:17<00:05, 85.3MB/s]Downloading data:  75%|██████████████▉     | 1.43G/1.91G [00:17<00:05, 90.1MB/s]Downloading data:  75%|███████████████     | 1.44G/1.91G [00:18<00:04, 95.3MB/s]Downloading data:  76%|███████████████▏    | 1.46G/1.91G [00:18<00:05, 79.0MB/s]Downloading data:  77%|███████████████▎    | 1.47G/1.91G [00:18<00:05, 77.0MB/s]Downloading data:  77%|███████████████▍    | 1.48G/1.91G [00:18<00:06, 66.3MB/s]Downloading data:  78%|███████████████▌    | 1.49G/1.91G [00:18<00:06, 65.7MB/s]Downloading data:  79%|███████████████▋    | 1.51G/1.91G [00:19<00:06, 67.6MB/s]Downloading data:  80%|███████████████▉    | 1.52G/1.91G [00:19<00:05, 75.8MB/s]Downloading data:  80%|████████████████    | 1.53G/1.91G [00:19<00:04, 76.6MB/s]Downloading data:  81%|████████████████▏   | 1.54G/1.91G [00:19<00:04, 86.2MB/s]Downloading data:  81%|████████████████▎   | 1.56G/1.91G [00:19<00:04, 76.7MB/s]Downloading data:  82%|████████████████▍   | 1.57G/1.91G [00:19<00:04, 80.6MB/s]Downloading data:  83%|████████████████▌   | 1.59G/1.91G [00:19<00:03, 87.8MB/s]^CTraceback (most recent call last):
+  File "/mnt/ssd-1/sai/semantic-memorization/model_training.py", line 1080, in <module>
+    main()
+  File "/mnt/ssd-1/sai/semantic-memorization/model_training.py", line 1021, in main
+    pile_dataset, memories_dataset = load_hf_dataset()
+                                     ^^^^^^^^^^^^^^^^^
+  File "/mnt/ssd-1/sai/semantic-memorization/model_training.py", line 123, in load_hf_dataset
+    pile_dataset = load_dataset(GENERATION_HF_DATASET_NAME, split=f"pile_{DATA_SCHEME}_{MODEL_SIZE}").to_pandas()
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/ssd-1/sai/miniconda3/envs/orz/lib/python3.11/site-packages/datasets/load.py", line 2582, in load_dataset
+    builder_instance.download_and_prepare(
+  File "/mnt/ssd-1/sai/miniconda3/envs/orz/lib/python3.11/site-packages/datasets/builder.py", line 1005, in download_and_prepare
+    self._download_and_prepare(
+  File "/mnt/ssd-1/sai/miniconda3/envs/orz/lib/python3.11/site-packages/datasets/builder.py", line 1078, in _download_and_prepare
+    split_generators = self._split_generators(dl_manager, **split_generators_kwargs)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/ssd-1/sai/miniconda3/envs/orz/lib/python3.11/site-packages/datasets/packaged_modules/parquet/parquet.py", line 43, in _split_generators
+    data_files = dl_manager.download_and_extract(self.config.data_files)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/ssd-1/sai/miniconda3/envs/orz/lib/python3.11/site-packages/datasets/download/download_manager.py", line 570, in download_and_extract
+    return self.extract(self.download(url_or_urls))
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/ssd-1/sai/miniconda3/envs/orz/lib/python3.11/site-packages/datasets/download/download_manager.py", line 434, in download
+    downloaded_path_or_paths = map_nested(
+                               ^^^^^^^^^^^
+  File "/mnt/ssd-1/sai/miniconda3/envs/orz/lib/python3.11/site-packages/datasets/utils/py_utils.py", line 475, in map_nested
+    mapped = [
+             ^
+  File "/mnt/ssd-1/sai/miniconda3/envs/orz/lib/python3.11/site-packages/datasets/utils/py_utils.py", line 476, in <listcomp>
+    _single_map_nested((function, obj, types, None, True, None))
+  File "/mnt/ssd-1/sai/miniconda3/envs/orz/lib/python3.11/site-packages/datasets/utils/py_utils.py", line 385, in _single_map_nested
+    mapped = [_single_map_nested((function, v, types, None, True, None)) for v in pbar]
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/ssd-1/sai/miniconda3/envs/orz/lib/python3.11/site-packages/datasets/utils/py_utils.py", line 385, in <listcomp>
+    mapped = [_single_map_nested((function, v, types, None, True, None)) for v in pbar]
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/ssd-1/sai/miniconda3/envs/orz/lib/python3.11/site-packages/datasets/utils/py_utils.py", line 368, in _single_map_nested
+    return function(data_struct)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/ssd-1/sai/miniconda3/envs/orz/lib/python3.11/site-packages/datasets/download/download_manager.py", line 459, in _download
+    out = cached_path(url_or_filename, download_config=download_config)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/ssd-1/sai/miniconda3/envs/orz/lib/python3.11/site-packages/datasets/utils/file_utils.py", line 190, in cached_path
+    output_path = get_from_cache(
+                  ^^^^^^^^^^^^^^^
+  File "/mnt/ssd-1/sai/miniconda3/envs/orz/lib/python3.11/site-packages/datasets/utils/file_utils.py", line 632, in get_from_cache
+    fsspec_get(url, temp_file, storage_options=storage_options, desc=download_desc)
+  File "/mnt/ssd-1/sai/miniconda3/envs/orz/lib/python3.11/site-packages/datasets/utils/file_utils.py", line 352, in fsspec_get
+    fs.get_file(paths[0], temp_file.name, callback=callback)
+  File "/mnt/ssd-1/sai/miniconda3/envs/orz/lib/python3.11/site-packages/fsspec/spec.py", line 900, in get_file
+    data = f1.read(self.blocksize)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/ssd-1/sai/miniconda3/envs/orz/lib/python3.11/site-packages/fsspec/spec.py", line 1846, in read
+    out = self.cache._fetch(self.loc, self.loc + length)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/ssd-1/sai/miniconda3/envs/orz/lib/python3.11/site-packages/fsspec/caching.py", line 189, in _fetch
+    self.cache = self.fetcher(start, end)  # new block replaces old
+                 ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/ssd-1/sai/miniconda3/envs/orz/lib/python3.11/site-packages/huggingface_hub/hf_file_system.py", line 642, in _fetch_range
+    r = http_backoff("GET", url, headers=headers, retry_on_status_codes=(502, 503, 504))
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/ssd-1/sai/miniconda3/envs/orz/lib/python3.11/site-packages/huggingface_hub/utils/_http.py", line 281, in http_backoff
+    response = session.request(method=method, url=url, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/ssd-1/sai/miniconda3/envs/orz/lib/python3.11/site-packages/requests/sessions.py", line 589, in request
+    resp = self.send(prep, **send_kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/ssd-1/sai/miniconda3/envs/orz/lib/python3.11/site-packages/requests/sessions.py", line 703, in send
+    r = adapter.send(request, **kwargs)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/ssd-1/sai/miniconda3/envs/orz/lib/python3.11/site-packages/huggingface_hub/utils/_http.py", line 67, in send
+    return super().send(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/ssd-1/sai/miniconda3/envs/orz/lib/python3.11/site-packages/requests/adapters.py", line 486, in send
+    resp = conn.urlopen(
+           ^^^^^^^^^^^^^
+  File "/mnt/ssd-1/sai/miniconda3/envs/orz/lib/python3.11/site-packages/urllib3/connectionpool.py", line 793, in urlopen
+    response = self._make_request(
+               ^^^^^^^^^^^^^^^^^^^
+  File "/mnt/ssd-1/sai/miniconda3/envs/orz/lib/python3.11/site-packages/urllib3/connectionpool.py", line 537, in _make_request
+    response = conn.getresponse()
+               ^^^^^^^^^^^^^^^^^^
+  File "/mnt/ssd-1/sai/miniconda3/envs/orz/lib/python3.11/site-packages/urllib3/connection.py", line 466, in getresponse
+    httplib_response = super().getresponse()
+                       ^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/ssd-1/sai/miniconda3/envs/orz/lib/python3.11/http/client.py", line 1390, in getresponse
+    response.begin()
+  File "/mnt/ssd-1/sai/miniconda3/envs/orz/lib/python3.11/http/client.py", line 325, in begin
+    version, status, reason = self._read_status()
+                              ^^^^^^^^^^^^^^^^^^^
+  File "/mnt/ssd-1/sai/miniconda3/envs/orz/lib/python3.11/http/client.py", line 286, in _read_status
+    line = str(self.fp.readline(_MAXLINE + 1), "iso-8859-1")
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/ssd-1/sai/miniconda3/envs/orz/lib/python3.11/socket.py", line 706, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/ssd-1/sai/miniconda3/envs/orz/lib/python3.11/ssl.py", line 1314, in recv_into
+    return self.read(nbytes, buffer)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/ssd-1/sai/miniconda3/envs/orz/lib/python3.11/ssl.py", line 1166, in read
+    return self._sslobj.read(len, buffer)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+KeyboardInterrupt
+Downloading data:  83%|████████████████▋   | 1.59G/1.91G [00:20<00:04, 79.1MB/s]
+^CTraceback (most recent call last):
+  File "/mnt/ssd-1/sai/semantic-memorization/model_training.py", line 1080, in <module>
+    main()
+  File "/mnt/ssd-1/sai/semantic-memorization/model_training.py", line 1021, in main
+    pile_dataset, memories_dataset = load_hf_dataset()
+                                     ^^^^^^^^^^^^^^^^^
+  File "/mnt/ssd-1/sai/semantic-memorization/model_training.py", line 123, in load_hf_dataset
+    pile_dataset = load_dataset(GENERATION_HF_DATASET_NAME, split=f"pile_{DATA_SCHEME}_{MODEL_SIZE}").to_pandas()
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/ssd-1/sai/miniconda3/envs/orz/lib/python3.11/site-packages/datasets/load.py", line 2556, in load_dataset
+    builder_instance = load_dataset_builder(
+                       ^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/ssd-1/sai/miniconda3/envs/orz/lib/python3.11/site-packages/datasets/load.py", line 2265, in load_dataset_builder
+    builder_instance: DatasetBuilder = builder_cls(
+                                       ^^^^^^^^^^^^
+  File "/mnt/ssd-1/sai/miniconda3/envs/orz/lib/python3.11/site-packages/datasets/builder.py", line 371, in __init__
+    self.config, self.config_id = self._create_builder_config(
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/ssd-1/sai/miniconda3/envs/orz/lib/python3.11/site-packages/datasets/builder.py", line 620, in _create_builder_config
+    builder_config._resolve_data_files(
+  File "/mnt/ssd-1/sai/miniconda3/envs/orz/lib/python3.11/site-packages/datasets/builder.py", line 211, in _resolve_data_files
+    self.data_files = self.data_files.resolve(base_path, download_config)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/ssd-1/sai/miniconda3/envs/orz/lib/python3.11/site-packages/datasets/data_files.py", line 799, in resolve
+    out[key] = data_files_patterns_list.resolve(base_path, download_config)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/ssd-1/sai/miniconda3/envs/orz/lib/python3.11/site-packages/datasets/data_files.py", line 752, in resolve
+    resolve_pattern(
+  File "/mnt/ssd-1/sai/miniconda3/envs/orz/lib/python3.11/site-packages/datasets/data_files.py", line 354, in resolve_pattern
+    fs, _, _ = get_fs_token_paths(pattern, storage_options=storage_options)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/ssd-1/sai/miniconda3/envs/orz/lib/python3.11/site-packages/fsspec/core.py", line 653, in get_fs_token_paths
+    paths = [f for f in sorted(fs.glob(paths)) if not fs.isdir(f)]
+                               ^^^^^^^^^^^^^^
+  File "/mnt/ssd-1/sai/miniconda3/envs/orz/lib/python3.11/site-packages/huggingface_hub/hf_file_system.py", line 397, in glob
+    return super().glob(path, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/ssd-1/sai/miniconda3/envs/orz/lib/python3.11/site-packages/fsspec/spec.py", line 604, in glob
+    allpaths = self.find(root, maxdepth=depth, withdirs=True, detail=True, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/ssd-1/sai/miniconda3/envs/orz/lib/python3.11/site-packages/huggingface_hub/hf_file_system.py", line 410, in find
+    return super().find(
+           ^^^^^^^^^^^^^
+  File "/mnt/ssd-1/sai/miniconda3/envs/orz/lib/python3.11/site-packages/fsspec/spec.py", line 495, in find
+    out[path] = self.info(path)
+                ^^^^^^^^^^^^^^^
+  File "/mnt/ssd-1/sai/miniconda3/envs/orz/lib/python3.11/site-packages/huggingface_hub/hf_file_system.py", line 517, in info
+    paths_info = self._api.get_paths_info(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/ssd-1/sai/miniconda3/envs/orz/lib/python3.11/site-packages/huggingface_hub/utils/_validators.py", line 118, in _inner_fn
+    return fn(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/mnt/ssd-1/sai/miniconda3/envs/orz/lib/python3.11/site-packages/huggingface_hub/hf_api.py", line 3137, in get_paths_info
+    response = get_session().post(
+               ^^^^^^^^^^^^^^^^^^^
+  File "/mnt/ssd-1/sai/miniconda3/envs/orz/lib/python3.11/site-packages/requests/sessions.py", line 637, in post
+    return self.request("POST", url, data=data, json=json, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/ssd-1/sai/miniconda3/envs/orz/lib/python3.11/site-packages/requests/sessions.py", line 589, in request
+    resp = self.send(prep, **send_kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/ssd-1/sai/miniconda3/envs/orz/lib/python3.11/site-packages/requests/sessions.py", line 703, in send
+    r = adapter.send(request, **kwargs)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/ssd-1/sai/miniconda3/envs/orz/lib/python3.11/site-packages/huggingface_hub/utils/_http.py", line 67, in send
+    return super().send(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/ssd-1/sai/miniconda3/envs/orz/lib/python3.11/site-packages/requests/adapters.py", line 486, in send
+    resp = conn.urlopen(
+           ^^^^^^^^^^^^^
+  File "/mnt/ssd-1/sai/miniconda3/envs/orz/lib/python3.11/site-packages/urllib3/connectionpool.py", line 793, in urlopen
+    response = self._make_request(
+               ^^^^^^^^^^^^^^^^^^^
+  File "/mnt/ssd-1/sai/miniconda3/envs/orz/lib/python3.11/site-packages/urllib3/connectionpool.py", line 537, in _make_request
+    response = conn.getresponse()
+               ^^^^^^^^^^^^^^^^^^
+  File "/mnt/ssd-1/sai/miniconda3/envs/orz/lib/python3.11/site-packages/urllib3/connection.py", line 466, in getresponse
+    httplib_response = super().getresponse()
+                       ^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/ssd-1/sai/miniconda3/envs/orz/lib/python3.11/http/client.py", line 1390, in getresponse
+    response.begin()
+  File "/mnt/ssd-1/sai/miniconda3/envs/orz/lib/python3.11/http/client.py", line 325, in begin
+    version, status, reason = self._read_status()
+                              ^^^^^^^^^^^^^^^^^^^
+  File "/mnt/ssd-1/sai/miniconda3/envs/orz/lib/python3.11/http/client.py", line 286, in _read_status
+    line = str(self.fp.readline(_MAXLINE + 1), "iso-8859-1")
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/ssd-1/sai/miniconda3/envs/orz/lib/python3.11/socket.py", line 706, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/ssd-1/sai/miniconda3/envs/orz/lib/python3.11/ssl.py", line 1314, in recv_into
+    return self.read(nbytes, buffer)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/ssd-1/sai/miniconda3/envs/orz/lib/python3.11/ssl.py", line 1166, in read
+    return self._sslobj.read(len, buffer)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+KeyboardInterrupt
+^C
